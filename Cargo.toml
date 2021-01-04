@@ -8,5 +8,4 @@ edition = "2018"
 
 [dependencies]
 sdl2 = { version = "0.34.3", features = ["bundled", "static-link"] }
-anyhow = "1.0.37"
 gl = "0.14.0"
