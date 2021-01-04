@@ -36,15 +36,26 @@ fn main() {
     ).unwrap();
 
     let vertices: Vec<f32> = vec![
-        // positions      // colors
-        0.5, -0.5, 0.0,   1.0, 0.0, 0.0,   // bottom right
-        -0.5, -0.5, 0.0,  0.0, 1.0, 0.0,   // bottom left
-        0.0,  0.5, 0.0,   0.0, 0.0, 1.0    // top
+        // positions       colors
+        0.5, 0.5, 0.0,     0.0, 0.0, 0.0,
+        0.5, -0.5, 0.0,    1.0, 0.0, 0.0,
+        -0.5, -0.5, 0.0,   0.0, 1.0, 0.0,
+        -0.5, 0.5, 0.0,    0.0, 0.0, 1.0,
+    ];
+    let indicies: Vec<GLuint> = vec![
+        0, 1, 3, 1, 2, 3,
     ];
 
     let mut vbo: GLuint = 0;
+    let mut vao: GLuint = 0;
+    let mut ebo: GLuint = 0;
     unsafe {
+        gl::GenVertexArrays(1, &mut vao);
         gl::GenBuffers(1, &mut vbo);
+        gl::GenBuffers(1, &mut ebo);
+
+        gl::BindVertexArray(vao);
+
         gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
         gl::BufferData(
             gl::ARRAY_BUFFER,
@@ -53,14 +64,13 @@ fn main() {
             gl::STATIC_DRAW,
         );
 
-        gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-    }
-
-    let mut vao: GLuint = 0;
-    unsafe {
-        gl::GenVertexArrays(1, &mut vao);
-        gl::BindVertexArray(vao);
-        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+        gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
+        gl::BufferData(
+            gl::ELEMENT_ARRAY_BUFFER,
+            (indicies.len() * std::mem::size_of::<f32>()) as GLsizeiptr,
+            indicies.as_ptr() as *const GLvoid,
+            gl::STATIC_DRAW,
+        );
 
         gl::EnableVertexAttribArray(0);
         gl::VertexAttribPointer(
@@ -90,6 +100,11 @@ fn main() {
         for event in events.poll_iter() {
             match event {
                 sdl2::event::Event::Quit { .. } => break 'main,
+                sdl2::event::Event::Window { win_event, ..} => {
+                    if let sdl2::event::WindowEvent::Resized(w, h) = win_event {
+                        unsafe { gl::Viewport(0, 0, w, h); }
+                    }
+                }
                 _ => {}
             }
         }
@@ -102,11 +117,7 @@ fn main() {
 
         unsafe {
             gl::BindVertexArray(vao);
-            gl::DrawArrays(
-                gl::TRIANGLES,
-                0,
-                3
-            );
+            gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, std::ptr::null());
         }
 
         window.gl_swap_window();
