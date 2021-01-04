@@ -36,9 +36,10 @@ fn main() {
     ).unwrap();
 
     let vertices: Vec<f32> = vec![
-        -0.5, -0.5, 0.0,
-        0.5, -0.5, 0.0,
-        0.0, 0.5, 0.0
+        // positions      // colors
+        0.5, -0.5, 0.0,   1.0, 0.0, 0.0,   // bottom right
+        -0.5, -0.5, 0.0,  0.0, 1.0, 0.0,   // bottom left
+        0.0,  0.5, 0.0,   0.0, 0.0, 1.0    // top
     ];
 
     let mut vbo: GLuint = 0;
@@ -64,8 +65,15 @@ fn main() {
         gl::EnableVertexAttribArray(0);
         gl::VertexAttribPointer(
             0, 3, gl::FLOAT, gl::FALSE,
-            (3 * std::mem::size_of::<f32>()) as GLint,
+            (6 * std::mem::size_of::<f32>()) as GLint,
             std::ptr::null(),
+        );
+
+        gl::EnableVertexAttribArray(1);
+        gl::VertexAttribPointer(
+            1, 3, gl::FLOAT, gl::FALSE,
+            (6 * std::mem::size_of::<f32>()) as GLint,
+            (3 * std::mem::size_of::<f32>()) as *const GLvoid,
         );
 
         gl::BindBuffer(gl::ARRAY_BUFFER, 0);
