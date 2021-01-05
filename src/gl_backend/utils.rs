@@ -1,6 +1,6 @@
-use std::ffi::CString;
-use gl::types::*;
 use super::utils;
+use gl::types::*;
+use std::ffi::CString;
 
 pub fn create_empty_cstring(len: usize) -> CString {
     let mut buffer: Vec<u8> = Vec::with_capacity(len + 1);

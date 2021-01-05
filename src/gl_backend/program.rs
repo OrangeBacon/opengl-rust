@@ -1,5 +1,5 @@
-use gl::types::*;
 use super::{utils, Shader};
+use gl::types::*;
 
 pub struct Program {
     id: GLuint,
@@ -10,20 +10,28 @@ impl Program {
         let program_id = unsafe { gl::CreateProgram() };
 
         for shader in shaders {
-            unsafe { gl::AttachShader(program_id, shader.id()); }
+            unsafe {
+                gl::AttachShader(program_id, shader.id());
+            }
         }
 
-        unsafe { gl::LinkProgram(program_id); }
+        unsafe {
+            gl::LinkProgram(program_id);
+        }
 
         let mut success: GLint = 1;
-        unsafe { gl::GetProgramiv(program_id, gl::LINK_STATUS, &mut success); }
+        unsafe {
+            gl::GetProgramiv(program_id, gl::LINK_STATUS, &mut success);
+        }
 
         if success == 0 {
             return Err(utils::get_gl_error(program_id));
         }
 
         for shader in shaders {
-            unsafe { gl::DetachShader(program_id, shader.id()); }
+            unsafe {
+                gl::DetachShader(program_id, shader.id());
+            }
         }
 
         Ok(Program { id: program_id })
