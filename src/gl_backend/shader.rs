@@ -8,16 +8,16 @@ pub struct Shader {
 }
 
 impl Shader {
-    fn from_source(source: &CStr, kind: GLenum) -> Result<Shader, String> {
+    fn from_source(source: &CStr, kind: GLenum) -> Result<Shader, utils::GLError> {
         let id = shader_from_source(source, kind)?;
         Ok(Shader { id })
     }
 
-    pub fn from_vert(source: &CStr) -> Result<Shader, String> {
+    pub fn from_vert(source: &CStr) -> Result<Shader, utils::GLError> {
         Shader::from_source(source, gl::VERTEX_SHADER)
     }
 
-    pub fn from_frag(source: &CStr) -> Result<Shader, String> {
+    pub fn from_frag(source: &CStr) -> Result<Shader, utils::GLError> {
         Shader::from_source(source, gl::FRAGMENT_SHADER)
     }
 
@@ -34,7 +34,7 @@ impl Drop for Shader {
     }
 }
 
-fn shader_from_source(source: &CStr, kind: GLuint) -> Result<GLuint, String> {
+fn shader_from_source(source: &CStr, kind: GLuint) -> Result<GLuint, utils::GLError> {
     let id = unsafe { gl::CreateShader(kind) };
 
     unsafe {

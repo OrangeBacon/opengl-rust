@@ -1,6 +1,10 @@
 use super::utils;
 use gl::types::*;
-use std::ffi::CString;
+use std::{
+    ffi::CString,
+    error::Error,
+    fmt,
+};
 
 pub fn create_empty_cstring(len: usize) -> CString {
     let mut buffer: Vec<u8> = Vec::with_capacity(len + 1);
@@ -9,7 +13,17 @@ pub fn create_empty_cstring(len: usize) -> CString {
     unsafe { CString::from_vec_unchecked(buffer) }
 }
 
-pub fn get_gl_error(id: GLuint) -> String {
+#[derive(Debug)]
+pub struct GLError(String);
+impl Error for GLError {}
+
+impl fmt::Display for GLError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "GLError: {}", self.0)
+    }
+}
+
+pub fn get_gl_error(id: GLuint) -> GLError {
     let mut len: GLint = 0;
     unsafe {
         gl::GetShaderiv(id, gl::INFO_LOG_LENGTH, &mut len);
@@ -21,5 +35,5 @@ pub fn get_gl_error(id: GLuint) -> String {
         gl::GetShaderInfoLog(id, len, std::ptr::null_mut(), error.as_ptr() as *mut GLchar);
     }
 
-    error.to_string_lossy().into_owned()
+   GLError(error.to_string_lossy().into_owned())
 }
