@@ -4,7 +4,7 @@ in VS_OUTPUT {
     vec3 Color;
 } IN;
 
-out vec4 Color;gfe
+out vec4 Color;
 
 void main()
 {

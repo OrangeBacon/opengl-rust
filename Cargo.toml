@@ -5,8 +5,9 @@ authors = ["OrangeBacon <computer.backup.15@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-sdl2 = { version = "0.34.3", features = ["bundled", "static-link"] }
+gl_derive = { path = "lib/gl_derive" }
 gl = { path = "lib/gl" }
+sdl2 = { version = "0.34.3", features = ["bundled", "static-link"] }
 image = "0.23.12"
 nalgebra = "0.24"
 thiserror = "1.0"

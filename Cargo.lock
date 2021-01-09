@@ -242,6 +242,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gl_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "gl_generator"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -451,6 +460,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "gl",
+ "gl_derive",
  "image",
  "nalgebra",
  "sdl2",
