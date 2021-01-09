@@ -14,16 +14,18 @@ impl f32_f32_f32 {
         f32_f32_f32 { d0, d1, d2 }
     }
 
-    pub unsafe fn attrib_pointer(gl: &gl::Gl, stride: usize, location: usize, offset: usize) {
-        gl.EnableVertexAttribArray(location as GLuint);
-        gl.VertexAttribPointer(
-            location as GLuint,
-            3,
-            gl::FLOAT,
-            gl::FALSE,
-            stride as GLint,
-            offset as *const GLvoid,
-        );
+    pub fn attrib_pointer(gl: &gl::Gl, stride: usize, location: usize, offset: usize) {
+        unsafe {
+            gl.EnableVertexAttribArray(location as GLuint);
+            gl.VertexAttribPointer(
+                location as GLuint,
+                3,
+                gl::FLOAT,
+                gl::FALSE,
+                stride as GLint,
+                offset as *const GLvoid,
+            );
+        }
     }
 }
 

@@ -1,4 +1,3 @@
-use sdl2;
 pub mod render_gl;
 pub mod resources;
 use anyhow::Result;
@@ -6,22 +5,22 @@ use gl::types::*;
 use gl_derive::VertexAttribPointers;
 use render_gl::data;
 use resources::Resources;
-use std::{mem::size_of, path::Path, ptr};
+use std::{mem::size_of, path::Path};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 enum SdlError {
     #[error("Error while initialising SDL2: {reason}")]
-    InitError { reason: String },
+    Init { reason: String },
 
     #[error("Error while initialising video subsystem: {reason}")]
-    VideoError { reason: String },
+    Video { reason: String },
 
     #[error("Error while initialising OpenGl Context: {reason}")]
-    GlContextError { reason: String },
+    GlContext { reason: String },
 
     #[error("Error while intialising SLD2 event pump: {reason}")]
-    EventError { reason: String },
+    Event { reason: String },
 }
 
 #[derive(VertexAttribPointers, Copy, Clone, Debug)]
@@ -44,11 +43,11 @@ fn main() {
 fn run() -> Result<()> {
     let res = Resources::from_exe_path(Path::new("assets"))?;
 
-    let sdl = sdl2::init().map_err(|e| SdlError::InitError { reason: e })?;
+    let sdl = sdl2::init().map_err(|e| SdlError::Init { reason: e })?;
 
     let video = sdl
         .video()
-        .map_err(|e| SdlError::VideoError { reason: e })?;
+        .map_err(|e| SdlError::Video { reason: e })?;
 
     let gl_attr = video.gl_attr();
     gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
@@ -62,7 +61,7 @@ fn run() -> Result<()> {
 
     let _ctx = window
         .gl_create_context()
-        .map_err(|e| SdlError::GlContextError { reason: e })?;
+        .map_err(|e| SdlError::GlContext { reason: e })?;
     let gl = gl::Gl::load_with(|s| video.gl_get_proc_address(s) as *const _);
 
     let shader_program = render_gl::Program::from_res(&gl, &res, "shaders/triangle")?;
@@ -107,7 +106,7 @@ fn run() -> Result<()> {
 
     let mut events = sdl
         .event_pump()
-        .map_err(|e| SdlError::EventError { reason: e })?;
+        .map_err(|e| SdlError::Event { reason: e })?;
     'main: loop {
         for event in events.poll_iter() {
             match event {
