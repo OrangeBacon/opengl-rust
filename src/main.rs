@@ -1,11 +1,13 @@
+#![feature(min_const_generics)]
+
 pub mod render_gl;
 pub mod resources;
+
 use anyhow::Result;
-use gl::types::*;
 use gl_derive::VertexAttribPointers;
-use render_gl::data;
+use render_gl::{buffer, data};
 use resources::Resources;
-use std::{mem::size_of, path::Path};
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -45,9 +47,7 @@ fn run() -> Result<()> {
 
     let sdl = sdl2::init().map_err(|e| SdlError::Init { reason: e })?;
 
-    let video = sdl
-        .video()
-        .map_err(|e| SdlError::Video { reason: e })?;
+    let video = sdl.video().map_err(|e| SdlError::Video { reason: e })?;
 
     let gl_attr = video.gl_attr();
     gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
@@ -74,30 +74,17 @@ fn run() -> Result<()> {
         Vertex { pos: ( 0.0,  0.5, 0.0).into(), clr: (0.0, 0.0, 1.0).into() },   // top
     ];
 
-    let mut vbo = 0;
-    unsafe {
-        gl.GenBuffers(1, &mut vbo);
-        gl.BindBuffer(gl::ARRAY_BUFFER, vbo);
-        gl.BufferData(
-            gl::ARRAY_BUFFER,
-            (verticies.len() * size_of::<Vertex>()) as GLsizeiptr,
-            verticies.as_ptr() as *const GLvoid,
-            gl::STATIC_DRAW,
-        );
-        gl.BindBuffer(gl::ARRAY_BUFFER, 0);
-    }
+    let vbo = buffer::ArrayBuffer::new(&gl);
+    vbo.bind();
+    vbo.static_draw_data(&verticies);
+    vbo.unbind();
 
-    let mut vao = 0;
-    unsafe {
-        gl.GenVertexArrays(1, &mut vao);
-        gl.BindVertexArray(vao);
-        gl.BindBuffer(gl::ARRAY_BUFFER, vbo);
-
-        Vertex::attrib_pointers(&gl);
-
-        gl.BindBuffer(gl::ARRAY_BUFFER, 0);
-        gl.BindVertexArray(0);
-    }
+    let vao = buffer::VertexArray::new(&gl);
+    vao.bind();
+    vbo.bind();
+    Vertex::attrib_pointers(&gl);
+    vbo.unbind();
+    vao.unbind();
 
     unsafe {
         gl.Viewport(0, 0, 900, 700);
@@ -127,8 +114,8 @@ fn run() -> Result<()> {
         }
 
         shader_program.set_used();
+        vao.bind();
         unsafe {
-            gl.BindVertexArray(vao);
             gl.DrawArrays(gl::TRIANGLES, 0, 3);
         }
 
