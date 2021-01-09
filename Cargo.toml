@@ -10,5 +10,8 @@ gl = { path = "lib/gl" }
 image = "0.23.12"
 nalgebra = "0.24"
 
+[build-dependencies]
+walkdir = "2"
+
 [features]
 gl_debug = ["gl/debug"]

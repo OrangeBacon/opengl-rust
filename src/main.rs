@@ -1,9 +1,13 @@
 use sdl2;
 pub mod render_gl;
+pub mod resources;
 use gl::types::*;
-use std::{ffi::CString, mem::size_of, ptr};
+use std::{ffi::CString, mem::size_of, ptr, path::Path};
+use resources::Resources;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let res = Resources::from_exe_path(Path::new("assets")).unwrap();
+
     let sdl = sdl2::init()?;
 
     let video = sdl.video()?;
@@ -21,16 +25,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ctx = window.gl_create_context()?;
     let gl = gl::Gl::load_with(|s| video.gl_get_proc_address(s) as *const _);
 
-    let vert_shader =
-        render_gl::Shader::from_vert(&gl, &CString::new(include_str!("triangle.vert")).unwrap())
-            .unwrap();
-
-    let frag_shader =
-        render_gl::Shader::from_frag(&gl, &CString::new(include_str!("triangle.frag")).unwrap())
-            .unwrap();
-
     let shader_program =
-        render_gl::Program::from_shaders(&gl, &[vert_shader, frag_shader]).unwrap();
+        render_gl::Program::from_res(&gl, &res, "shaders/triangle").unwrap();
 
     #[rustfmt::skip]
     let verticies: Vec<f32> = vec![
