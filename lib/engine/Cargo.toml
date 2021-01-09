@@ -1,0 +1,10 @@
+[package]
+name = "engine"
+version = "0.1.0"
+authors = ["OrangeBacon <computer.backup.15@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+gl = { path = "../gl" }
+thiserror = "1.0"
+anyhow = "1.0"

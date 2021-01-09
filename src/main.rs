@@ -1,12 +1,6 @@
-#![feature(min_const_generics)]
-
-pub mod render_gl;
-pub mod resources;
-
 use anyhow::Result;
 use gl_derive::VertexAttribPointers;
-use render_gl::{buffer, data};
-use resources::Resources;
+use engine::{resources::Resources, buffer, Program, data};
 use std::path::Path;
 use thiserror::Error;
 
@@ -64,7 +58,7 @@ fn run() -> Result<()> {
         .map_err(|e| SdlError::GlContext { reason: e })?;
     let gl = gl::Gl::load_with(|s| video.gl_get_proc_address(s) as *const _);
 
-    let shader_program = render_gl::Program::from_res(&gl, &res, "shaders/triangle")?;
+    let shader_program = Program::from_res(&gl, &res, "shaders/triangle")?;
 
     #[rustfmt::skip]
     let verticies: Vec<Vertex> = vec![
