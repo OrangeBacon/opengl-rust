@@ -3,18 +3,18 @@ use std::{
     io::{self, Read},
     path::{Path, PathBuf},
 };
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum Error {
-    Io(io::Error),
-    FileContainsNil,
-    FailedToGetExePath,
-}
+    #[error("File system error")]
+    Io(#[from] io::Error),
 
-impl From<io::Error> for Error {
-    fn from(other: io::Error) -> Self {
-        Error::Io(other)
-    }
+    #[error("File loaded contains null byte")]
+    FileContainsNil,
+
+    #[error("Failed to load current executable path")]
+    FailedToGetExePath,
 }
 
 pub struct Resources {

@@ -9,6 +9,8 @@ sdl2 = { version = "0.34.3", features = ["bundled", "static-link"] }
 gl = { path = "lib/gl" }
 image = "0.23.12"
 nalgebra = "0.24"
+thiserror = "1.0"
+anyhow = "1.0"
 
 [build-dependencies]
 walkdir = "2"
