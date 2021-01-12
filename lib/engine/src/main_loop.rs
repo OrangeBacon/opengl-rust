@@ -18,11 +18,17 @@ enum SdlError {
     Event { reason: String },
 }
 
+pub struct EngineState {
+    pub window: sdl2::video::Window,
+    pub gl: gl::Gl,
+    pub mouse_state: sdl2::mouse::MouseState,
+    pub video: sdl2::VideoSubsystem,
+}
+
 pub struct MainLoop {
     layers: Vec<Rc<RefCell<dyn crate::Layer>>>,
-    sdl: sdl2::Sdl,
-    window: sdl2::video::Window,
-    gl: gl::Gl,
+    state: EngineState,
+    events: sdl2::EventPump,
     _ctx: sdl2::video::GLContext,
 }
 
@@ -45,41 +51,51 @@ impl MainLoop {
         let ctx = window
             .gl_create_context()
             .map_err(|e| SdlError::GlContext { reason: e })?;
-        let gl = gl::Gl::load_with(|s| video.gl_get_proc_address(s) as *const _);
+        let gl = gl::Gl::load_with(|s| video.gl_get_proc_address(s) as _);
+
+        let events = sdl
+            .event_pump()
+            .map_err(|e| SdlError::Event { reason: e })?;
+
+        let mouse_state = events.mouse_state();
 
         Ok(MainLoop {
-            sdl,
-            window,
-            _ctx: ctx,
-            gl: gl,
+            events,
             layers: vec![],
+            _ctx: ctx,
+            state: EngineState {
+                gl,
+                window,
+                video,
+                mouse_state,
+            }
         })
     }
 
     pub fn add_layer<T: 'static + crate::Layer>(&mut self) -> Result<()> {
-        let layer = T::new(&self.gl)?;
+        let layer = T::new(&self.state)?;
         self.layers.push(Rc::new(RefCell::new(layer)));
 
         Ok(())
     }
 
     pub fn run(mut self) -> Result<()> {
-        let mut events = self.sdl
-            .event_pump()
-            .map_err(|e| SdlError::Event { reason: e })?;
+
         'main: loop {
-            for event in events.poll_iter() {
+            for event in self.events.poll_iter() {
                 for layer in self.layers.iter_mut() {
-                    if layer.borrow_mut().handle_event(&event, &self.gl) {
+                    if layer.borrow_mut().handle_event(&event, &self.state) {
                         break 'main;
                     }
                 }
             }
 
+            self.state.mouse_state = self.events.mouse_state();
+
             for layer in self.layers.iter_mut() {
-                layer.borrow_mut().render(&self.gl);
+                layer.borrow_mut().render(&self.state);
             }
-            self.window.gl_swap_window();
+            self.state.window.gl_swap_window();
         }
 
         Ok(())

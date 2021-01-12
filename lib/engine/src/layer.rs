@@ -1,8 +1,9 @@
 use anyhow::Result;
+use crate::main_loop::EngineState;
 
 pub trait Layer {
-    fn new(gl: &gl::Gl) -> Result<Self>
+    fn new(state: &EngineState) -> Result<Self>
         where Self: std::marker::Sized;
-    fn handle_event(&mut self, event: &sdl2::event::Event, gl: &gl::Gl) -> bool;
-    fn render(&mut self, gl: &gl::Gl);
+    fn handle_event(&mut self, event: &sdl2::event::Event, state: &EngineState) -> bool;
+    fn render(&mut self, state: &EngineState);
 }

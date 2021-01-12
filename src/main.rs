@@ -1,5 +1,5 @@
 use anyhow::Result;
-use engine::{buffer, data, gl, resources::Resources, sdl2, Layer, MainLoop, Program};
+use engine::{buffer, data, gl, resources::Resources, sdl2, EngineState, Layer, MainLoop, Program};
 use gl_derive::VertexAttribPointers;
 use std::path::Path;
 
@@ -20,9 +20,9 @@ struct Triangle {
 }
 
 impl Layer for Triangle {
-    fn new(gl: &gl::Gl) -> Result<Self> {
+    fn new(state: &EngineState) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
-        let shader_program = Program::from_res(&gl, &res, "shaders/triangle")?;
+        let shader_program = Program::from_res(&state.gl, &res, "shaders/triangle")?;
 
         #[rustfmt::skip]
         let verticies: Vec<Vertex> = vec![
@@ -32,21 +32,21 @@ impl Layer for Triangle {
             Vertex { pos: ( 0.0,  0.5, 0.0).into(), clr: (0.0, 0.0, 1.0).into() },   // top
         ];
 
-        let vbo = buffer::ArrayBuffer::new(&gl);
+        let vbo = buffer::ArrayBuffer::new(&state.gl);
         vbo.bind();
         vbo.static_draw_data(&verticies);
         vbo.unbind();
 
-        let vao = buffer::VertexArray::new(&gl);
+        let vao = buffer::VertexArray::new(&state.gl);
         vao.bind();
         vbo.bind();
-        Vertex::attrib_pointers(&gl);
+        Vertex::attrib_pointers(&state.gl);
         vbo.unbind();
         vao.unbind();
 
         unsafe {
-            gl.Viewport(0, 0, 900, 700);
-            gl.ClearColor(0.3, 0.3, 0.5, 1.0);
+            state.gl.Viewport(0, 0, 900, 700);
+            state.gl.ClearColor(0.3, 0.3, 0.5, 1.0);
         }
 
         Ok(Triangle {
@@ -56,13 +56,13 @@ impl Layer for Triangle {
         })
     }
 
-    fn handle_event(&mut self, event: &sdl2::event::Event, gl: &gl::Gl) -> bool {
+    fn handle_event(&mut self, event: &sdl2::event::Event, state: &EngineState) -> bool {
         match event {
             sdl2::event::Event::Quit { .. } => return true,
             sdl2::event::Event::Window { win_event, .. } => {
                 if let sdl2::event::WindowEvent::Resized(w, h) = win_event {
                     unsafe {
-                        gl.Viewport(0, 0, *w, *h);
+                        state.gl.Viewport(0, 0, *w, *h);
                     }
                 }
             }
@@ -71,15 +71,15 @@ impl Layer for Triangle {
 
         false
     }
-    fn render(&mut self, gl: &gl::Gl) {
+    fn render(&mut self, state: &EngineState) {
         unsafe {
-            gl.Clear(gl::COLOR_BUFFER_BIT);
+            state.gl.Clear(gl::COLOR_BUFFER_BIT);
         }
 
         self.shader_program.set_used();
         self.vao.bind();
         unsafe {
-            gl.DrawArrays(gl::TRIANGLES, 0, 3);
+            state.gl.DrawArrays(gl::TRIANGLES, 0, 3);
         }
     }
 }
@@ -94,6 +94,7 @@ fn main() {
 fn run() -> Result<()> {
     let mut main_loop = MainLoop::new()?;
     main_loop.add_layer::<Triangle>()?;
+    main_loop.add_layer::<engine::imgui::ImguiLayer>()?;
 
     main_loop.run()?;
 

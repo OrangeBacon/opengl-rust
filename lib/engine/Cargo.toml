@@ -8,5 +8,8 @@ edition = "2018"
 gl = { path = "../gl" }
 
 sdl2 = { version = "0.34.3", features = ["bundled", "static-link"] }
+imgui = "0.6.1"
+imgui-sdl2 = "0.13.0"
+imgui-opengl-renderer = "0.10.0"
 thiserror = "1.0"
 anyhow = "1.0"
