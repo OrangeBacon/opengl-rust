@@ -24,7 +24,7 @@ fn generate_impl(ast: &DeriveInput) -> TokenStream {
     TokenStream::from(quote! {
         impl #ident #generics #where_clause {
             #[allow(unused_variables)]
-            pub fn attrib_pointers(gl: &::gl::Gl) {
+            pub fn attrib_pointers(gl: &gl::Gl) {
                 let stride = ::std::mem::size_of::<Self>();
                 let offset = 0;
 

@@ -6,5 +6,7 @@ edition = "2018"
 
 [dependencies]
 gl = { path = "../gl" }
+
+sdl2 = { version = "0.34.3", features = ["bundled", "static-link"] }
 thiserror = "1.0"
 anyhow = "1.0"
