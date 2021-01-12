@@ -5,7 +5,7 @@ authors = ["OrangeBacon <computer.backup.15@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-gl = { path = "lib/gl" }
+gl = "0.14.0"
 gl_derive = { path = "lib/gl_derive" }
 engine = {path = "lib/engine" }
 
@@ -17,6 +17,3 @@ anyhow = "1.0"
 
 [build-dependencies]
 walkdir = "2"
-
-[features]
-gl_debug = ["gl/debug"]

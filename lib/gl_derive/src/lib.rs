@@ -24,7 +24,7 @@ fn generate_impl(ast: &DeriveInput) -> TokenStream {
     TokenStream::from(quote! {
         impl #ident #generics #where_clause {
             #[allow(unused_variables)]
-            pub fn attrib_pointers(gl: &::gl::Gl) {
+            pub fn attrib_pointers() {
                 let stride = ::std::mem::size_of::<Self>();
                 let offset = 0;
 
@@ -80,7 +80,7 @@ fn generate_one_call(field: &Field) -> TokenStream2 {
     quote! {
         let location = #int_lit;
         unsafe {
-            #field_ty::attrib_pointer(gl, stride, location, offset);
+            #field_ty::attrib_pointer(stride, location, offset);
         }
         let offset = offset + ::std::mem::size_of::<#field_ty>();
     }

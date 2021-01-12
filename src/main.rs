@@ -56,9 +56,9 @@ fn run() -> Result<()> {
     let _ctx = window
         .gl_create_context()
         .map_err(|e| SdlError::GlContext { reason: e })?;
-    let gl = gl::Gl::load_with(|s| video.gl_get_proc_address(s) as *const _);
+    let _gl = gl::load_with(|s| video.gl_get_proc_address(s) as *const _);
 
-    let shader_program = Program::from_res(&gl, &res, "shaders/triangle")?;
+    let shader_program = Program::from_res(&res, "shaders/triangle")?;
 
     #[rustfmt::skip]
     let verticies: Vec<Vertex> = vec![
@@ -68,21 +68,21 @@ fn run() -> Result<()> {
         Vertex { pos: ( 0.0,  0.5, 0.0).into(), clr: (0.0, 0.0, 1.0).into() },   // top
     ];
 
-    let vbo = buffer::ArrayBuffer::new(&gl);
+    let vbo = buffer::ArrayBuffer::new();
     vbo.bind();
     vbo.static_draw_data(&verticies);
     vbo.unbind();
 
-    let vao = buffer::VertexArray::new(&gl);
+    let vao = buffer::VertexArray::new();
     vao.bind();
     vbo.bind();
-    Vertex::attrib_pointers(&gl);
+    Vertex::attrib_pointers();
     vbo.unbind();
     vao.unbind();
 
     unsafe {
-        gl.Viewport(0, 0, 900, 700);
-        gl.ClearColor(0.3, 0.3, 0.5, 1.0);
+        gl::Viewport(0, 0, 900, 700);
+        gl::ClearColor(0.3, 0.3, 0.5, 1.0);
     }
 
     let mut events = sdl
@@ -95,7 +95,7 @@ fn run() -> Result<()> {
                 sdl2::event::Event::Window { win_event, .. } => {
                     if let sdl2::event::WindowEvent::Resized(w, h) = win_event {
                         unsafe {
-                            gl.Viewport(0, 0, w, h);
+                            gl::Viewport(0, 0, w, h);
                         }
                     }
                 }
@@ -104,13 +104,13 @@ fn run() -> Result<()> {
         }
 
         unsafe {
-            gl.Clear(gl::COLOR_BUFFER_BIT);
+            gl::Clear(gl::COLOR_BUFFER_BIT);
         }
 
         shader_program.set_used();
         vao.bind();
         unsafe {
-            gl.DrawArrays(gl::TRIANGLES, 0, 3);
+            gl::DrawArrays(gl::TRIANGLES, 0, 3);
         }
 
         window.gl_swap_window();
