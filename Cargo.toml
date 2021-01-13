@@ -11,3 +11,10 @@ anyhow = "1.0"
 
 [build-dependencies]
 walkdir = "2"
+
+[workspace]
+members = [
+    "lib/engine",
+    "lib/gl",
+    "lib/gl_derive",
+]

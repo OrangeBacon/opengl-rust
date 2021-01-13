@@ -1,4 +1,7 @@
-use crate::resources::{Error as ResourceError, Resources};
+use crate::{
+    resources::{Error as ResourceError, Resources},
+    Texture,
+};
 use gl::types::*;
 use std::{
     ffi::{CStr, CString},
@@ -92,6 +95,19 @@ impl Program {
     pub fn set_used(&self) {
         unsafe {
             self.gl.UseProgram(self.id);
+        }
+    }
+
+    /// binds the given texture to the uniform name provided
+    /// assumes that the texture's index is distinct from the previously
+    /// bound textures
+    pub fn bind_texture(&self, name: &str, tex: &Texture) {
+        let name = CString::new(name).unwrap();
+
+        unsafe {
+            let loc = self.gl.GetUniformLocation(self.id, name.as_ptr() as _);
+            self.gl.Uniform1i(loc, tex.index() as _);
+            tex.bind();
         }
     }
 }

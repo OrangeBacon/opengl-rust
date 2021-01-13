@@ -49,7 +49,7 @@ impl<const TYPE: u32> Buffer<TYPE> {
 impl<const TYPE: u32> Drop for Buffer<TYPE> {
     fn drop(&mut self) {
         unsafe {
-            self.gl.DeleteBuffers(1, &mut self.vbo);
+            self.gl.DeleteBuffers(1, &self.vbo);
         }
     }
 }
@@ -86,7 +86,7 @@ impl VertexArray {
 impl Drop for VertexArray {
     fn drop(&mut self) {
         unsafe {
-            self.gl.DeleteVertexArrays(1, &mut self.vao);
+            self.gl.DeleteVertexArrays(1, &self.vao);
         }
     }
 }

@@ -2,11 +2,14 @@
 
 in VS_OUTPUT {
     vec3 Color;
+    vec2 TexCoord;
 } IN;
 
 out vec4 Color;
 
-void main()
-{
-    Color = vec4(IN.Color, 1.0f);
+uniform sampler2D crate;
+uniform sampler2D face;
+
+void main() {
+    Color = mix(texture(crate, IN.TexCoord), texture(face, IN.TexCoord), 0.2) * vec4(IN.Color, 1.0f);
 }

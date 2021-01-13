@@ -1,11 +1,11 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::{
-    parse_macro_input, DeriveInput, Data, DataStruct, Fields, Field, Meta, MetaNameValue, Lit,
+    parse_macro_input, Data, DataStruct, DeriveInput, Field, Fields, Lit, Meta, MetaNameValue,
 };
-use proc_macro2::TokenStream as TokenStream2;
 
 #[proc_macro_derive(VertexAttribPointers, attributes(location))]
 pub fn vertex_attrib_pointers_derive(input: TokenStream) -> TokenStream {
@@ -38,11 +38,18 @@ fn generate_calls(body: &Data) -> Vec<TokenStream2> {
     match body {
         Data::Enum(_) => panic!("Cannot derive for enum"),
         Data::Union(_) => panic!("Cannot derive for union"),
-        Data::Struct(DataStruct {fields: Fields::Unnamed(_), ..}) => panic!("Cannot derive for tuple struct"),
-        Data::Struct(DataStruct {fields: Fields::Unit, ..}) => panic!("Cannot derive for unit struct"),
-        Data::Struct(DataStruct {fields: Fields::Named(ref a), ..}) => {
-            a.named.iter().map(generate_one_call).collect()
-        }
+        Data::Struct(DataStruct {
+            fields: Fields::Unnamed(_),
+            ..
+        }) => panic!("Cannot derive for tuple struct"),
+        Data::Struct(DataStruct {
+            fields: Fields::Unit,
+            ..
+        }) => panic!("Cannot derive for unit struct"),
+        Data::Struct(DataStruct {
+            fields: Fields::Named(ref a),
+            ..
+        }) => a.named.iter().map(generate_one_call).collect(),
     }
 }
 
@@ -52,7 +59,8 @@ fn generate_one_call(field: &Field) -> TokenStream2 {
         None => String::from(""),
     };
 
-    let location_attr = field.attrs
+    let location_attr = field
+        .attrs
         .iter()
         .filter(|a| {
             let path = &a.path;
@@ -65,13 +73,18 @@ fn generate_one_call(field: &Field) -> TokenStream2 {
             seg.arguments.is_empty() && format!("{}", seg.ident) == "location"
         })
         .next()
-        .unwrap_or_else(|| panic!(
-            "Field {:?} is missing #[location = ?] attribute", field_name
-        ));
+        .unwrap_or_else(|| {
+            panic!(
+                "Field {:?} is missing #[location = ?] attribute",
+                field_name
+            )
+        });
 
     let tokens = location_attr.parse_meta().unwrap();
     let int_lit = match tokens {
-        Meta::NameValue(MetaNameValue { lit: Lit::Int(a), ..}) => a,
+        Meta::NameValue(MetaNameValue {
+            lit: Lit::Int(a), ..
+        }) => a,
         _ => panic!("Expected name value"),
     };
 

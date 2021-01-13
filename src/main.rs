@@ -1,7 +1,9 @@
 use anyhow::Result;
-use engine::{buffer, data, gl, resources::Resources, sdl2, EngineState, Layer, MainLoop, Program};
+use engine::{
+    buffer, data, gl, resources::Resources, sdl2, EngineState, Layer, MainLoop, Program, Texture,
+};
 use gl_derive::VertexAttribPointers;
-use std::path::Path;
+use std::{path::Path, ptr};
 
 #[derive(VertexAttribPointers, Copy, Clone, Debug)]
 #[repr(C, packed)]
@@ -11,12 +13,18 @@ struct Vertex {
 
     #[location = 1]
     clr: data::f32_f32_f32,
+
+    #[location = 2]
+    uv: data::f32_f32,
 }
 
 struct Triangle {
     _vbo: buffer::ArrayBuffer,
     vao: buffer::VertexArray,
+    ebo: buffer::ElementArrayBuffer,
     shader_program: Program,
+    crate_tex: Texture,
+    face_tex: Texture,
 }
 
 impl Layer for Triangle {
@@ -24,13 +32,23 @@ impl Layer for Triangle {
         let res = Resources::from_exe_path(Path::new("assets"))?;
         let shader_program = Program::from_res(&state.gl, &res, "shaders/triangle")?;
 
+        let crate_tex = Texture::from_res(&state.gl, &res, "container.jpg", 0)?;
+        let face_tex = Texture::from_res(&state.gl, &res, "awesomeface.png", 1)?;
+
         #[rustfmt::skip]
         let verticies: Vec<Vertex> = vec![
             // positions                            // colors
-            Vertex { pos: ( 0.5, -0.5, 0.0).into(), clr: (1.0, 0.0, 0.0).into() },   // bottom right
-            Vertex { pos: (-0.5, -0.5, 0.0).into(), clr: (0.0, 1.0, 0.0).into() },   // bottom left
-            Vertex { pos: ( 0.0,  0.5, 0.0).into(), clr: (0.0, 0.0, 1.0).into() },   // top
+            Vertex { pos: ( 0.5,  0.5, 0.0).into(), clr: (1.0, 0.0, 0.0).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: ( 0.5, -0.5, 0.0).into(), clr: (0.0, 1.0, 0.0).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: (-0.5, -0.5, 0.0).into(), clr: (0.0, 0.0, 1.0).into(), uv: (0.0, 0.0).into() },
+            Vertex { pos: (-0.5,  0.5, 0.0).into(), clr: (1.0, 1.0, 0.0).into(), uv: (0.0, 1.0).into() },
         ];
+
+        let indices = vec![0, 1, 3, 1, 2, 3];
+
+        let ebo = buffer::ElementArrayBuffer::new(&state.gl);
+        ebo.bind();
+        ebo.static_draw_data(&indices);
 
         let vbo = buffer::ArrayBuffer::new(&state.gl);
         vbo.bind();
@@ -44,6 +62,8 @@ impl Layer for Triangle {
         vbo.unbind();
         vao.unbind();
 
+        ebo.unbind();
+
         unsafe {
             state.gl.Viewport(0, 0, 900, 700);
             state.gl.ClearColor(0.3, 0.3, 0.5, 1.0);
@@ -51,6 +71,9 @@ impl Layer for Triangle {
 
         Ok(Triangle {
             vao,
+            ebo,
+            crate_tex,
+            face_tex,
             _vbo: vbo,
             shader_program,
         })
@@ -71,15 +94,21 @@ impl Layer for Triangle {
 
         false
     }
+
     fn render(&mut self, state: &EngineState) {
         unsafe {
             state.gl.Clear(gl::COLOR_BUFFER_BIT);
         }
 
         self.shader_program.set_used();
+        self.shader_program.bind_texture("crate", &self.crate_tex);
+        self.shader_program.bind_texture("face", &self.face_tex);
         self.vao.bind();
+        self.ebo.bind();
         unsafe {
-            state.gl.DrawArrays(gl::TRIANGLES, 0, 3);
+            state
+                .gl
+                .DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
         }
     }
 }

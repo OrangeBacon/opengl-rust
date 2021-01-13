@@ -1,8 +1,8 @@
-use thiserror::Error;
 use anyhow::Result;
-use std::{ptr, rc::Rc};
-use std::cell::RefCell;
 use gl::types::*;
+use std::cell::RefCell;
+use std::{ptr, rc::Rc};
+use thiserror::Error;
 
 /// Error type used during initialisation of SDL2 - the default bindings only
 /// output `String`, so this type annotates the string with the function that
@@ -25,7 +25,6 @@ enum SdlError {
 
 /// Graphics api state that is avaliable to render layers.
 pub struct EngineState {
-
     /// Main window rendered to.
     pub window: sdl2::video::Window,
 
@@ -42,7 +41,6 @@ pub struct EngineState {
 
 /// The main game storage, is used to call the main loop.
 pub struct MainLoop {
-
     /// Vector of everything in the render state of the game.
     /// I couldn't get rust to have a vec of mutable trait objects without
     /// using `Rc<RefCell<...>>`, in reality these objects should only ever
@@ -65,13 +63,11 @@ pub struct MainLoop {
 }
 
 impl MainLoop {
-
     /// Try to create a new game engine instance, using default settings
     /// Currently there is no way to change the settings used, this should
     /// probably be changed.  This method initialises the graphics and creates
     /// a window that will be shown to the user.
     pub fn new() -> Result<Self> {
-
         // initialise graphics library
         let sdl = sdl2::init().map_err(|e| SdlError::Init { reason: e })?;
 
@@ -114,7 +110,6 @@ impl MainLoop {
             .event_pump()
             .map_err(|e| SdlError::Event { reason: e })?;
 
-
         // A mouse state is required in intitialisation so that the struct
         // field is initialised, it will likely be overwritten during the
         // first frame
@@ -129,7 +124,7 @@ impl MainLoop {
                 window,
                 video,
                 mouse_state,
-            }
+            },
         })
     }
 
@@ -146,7 +141,6 @@ impl MainLoop {
     /// Start the game loop, this function will not return until the main window
     /// is closed, only saving, error reporting, etc should happen afterwrds.
     pub fn run(mut self) -> Result<()> {
-
         'main: loop {
             for event in self.events.poll_iter() {
                 for layer in self.layers.iter_mut() {
@@ -169,6 +163,7 @@ impl MainLoop {
 }
 
 /// attach console print debugging to the provided OpenGL Context
+#[cfg(debug_assertions)]
 fn enable_gl_debugging(gl: &gl::Gl) {
     let mut flags = 0;
     unsafe {
@@ -193,30 +188,50 @@ fn enable_gl_debugging(gl: &gl::Gl) {
         gl.DebugMessageCallback(Some(gl_debug_log), ptr::null());
 
         // tell the driver that we want all possible debug messages
-        gl.DebugMessageControl(gl::DONT_CARE, gl::DONT_CARE, gl::DONT_CARE, 0, ptr::null(), gl::TRUE);
+        gl.DebugMessageControl(
+            gl::DONT_CARE,
+            gl::DONT_CARE,
+            gl::DONT_CARE,
+            0,
+            ptr::null(),
+            gl::TRUE,
+        );
     }
 }
 
 /// Debuging callback
-extern "system" fn gl_debug_log(source: GLenum, gltype: GLenum, id: GLuint,
-        severity: GLenum, _length: GLsizei, message: *const GLchar, _user_param: *mut GLvoid) {
-
+#[cfg(debug_assertions)]
+extern "system" fn gl_debug_log(
+    source: GLenum,
+    gltype: GLenum,
+    id: GLuint,
+    severity: GLenum,
+    _length: GLsizei,
+    message: *const GLchar,
+    _user_param: *mut GLvoid,
+) {
     // id of trivial, non error/warning infomation messages
     // not worth printing, would obscure actual errors
-    if id == 0x20071 { return; }
+    if id == 0x20071 {
+        return;
+    }
 
     println!("----------------");
-    println!("OpenGL {1} - {0:#x}:", id, match gltype {
-        gl::DEBUG_TYPE_ERROR => "Error",
-        gl::DEBUG_TYPE_DEPRECATED_BEHAVIOR => "Deprecated Behaviour",
-        gl::DEBUG_TYPE_UNDEFINED_BEHAVIOR => "Undefined Behaviour",
-        gl::DEBUG_TYPE_PORTABILITY => "Portability",
-        gl::DEBUG_TYPE_PERFORMANCE => "Performance",
-        gl::DEBUG_TYPE_MARKER => "Marker",
-        gl::DEBUG_TYPE_PUSH_GROUP => "Push Group",
-        gl::DEBUG_TYPE_POP_GROUP => "Pop Group",
-        _ => "Other",
-    });
+    println!(
+        "OpenGL {1} - {0:#x}:",
+        id,
+        match gltype {
+            gl::DEBUG_TYPE_ERROR => "Error",
+            gl::DEBUG_TYPE_DEPRECATED_BEHAVIOR => "Deprecated Behaviour",
+            gl::DEBUG_TYPE_UNDEFINED_BEHAVIOR => "Undefined Behaviour",
+            gl::DEBUG_TYPE_PORTABILITY => "Portability",
+            gl::DEBUG_TYPE_PERFORMANCE => "Performance",
+            gl::DEBUG_TYPE_MARKER => "Marker",
+            gl::DEBUG_TYPE_PUSH_GROUP => "Push Group",
+            gl::DEBUG_TYPE_POP_GROUP => "Pop Group",
+            _ => "Other",
+        }
+    );
 
     // cast message from null terminated string, to rust types, is
     // guaranteed to be correctly null terminated by the standard,
@@ -225,20 +240,26 @@ extern "system" fn gl_debug_log(source: GLenum, gltype: GLenum, id: GLuint,
 
     println!("Message: {}", message.to_string_lossy());
 
-    println!("Severity: {}", match severity {
-        gl::DEBUG_SEVERITY_HIGH => "high",
-        gl::DEBUG_SEVERITY_MEDIUM => "medium",
-        gl::DEBUG_SEVERITY_LOW => "low",
-        gl::DEBUG_SEVERITY_NOTIFICATION => "notification",
-        _ => "other",
-    });
+    println!(
+        "Severity: {}",
+        match severity {
+            gl::DEBUG_SEVERITY_HIGH => "high",
+            gl::DEBUG_SEVERITY_MEDIUM => "medium",
+            gl::DEBUG_SEVERITY_LOW => "low",
+            gl::DEBUG_SEVERITY_NOTIFICATION => "notification",
+            _ => "other",
+        }
+    );
 
-    println!("Source: {}", match source {
-        gl::DEBUG_SOURCE_API => "API",
-        gl::DEBUG_SOURCE_WINDOW_SYSTEM => "Window System",
-        gl::DEBUG_SOURCE_SHADER_COMPILER => "Shader Compiler",
-        gl::DEBUG_SOURCE_THIRD_PARTY => "Third Party",
-        gl::DEBUG_SOURCE_APPLICATION => "Application",
-        _ => "Other",
-    });
+    println!(
+        "Source: {}",
+        match source {
+            gl::DEBUG_SOURCE_API => "API",
+            gl::DEBUG_SOURCE_WINDOW_SYSTEM => "Window System",
+            gl::DEBUG_SOURCE_SHADER_COMPILER => "Shader Compiler",
+            gl::DEBUG_SOURCE_THIRD_PARTY => "Third Party",
+            gl::DEBUG_SOURCE_APPLICATION => "Application",
+            _ => "Other",
+        }
+    );
 }

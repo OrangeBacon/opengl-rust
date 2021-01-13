@@ -1,8 +1,8 @@
 use std::time::Instant;
 
+use crate::{main_loop::EngineState, Layer};
 use anyhow::Result;
 use sdl2::event::Event;
-use crate::{Layer, main_loop::EngineState};
 
 pub struct ImguiLayer {
     context: imgui::Context,
@@ -17,8 +17,9 @@ impl Layer for ImguiLayer {
         context.set_ini_filename(None);
 
         let imgui_sdl2 = imgui_sdl2::ImguiSdl2::new(&mut context, &state.window);
-        let renderer = imgui_opengl_renderer::Renderer::new(&mut context,
-            |s| state.video.gl_get_proc_address(s) as _);
+        let renderer = imgui_opengl_renderer::Renderer::new(&mut context, |s| {
+            state.video.gl_get_proc_address(s) as _
+        });
         let frame_time = Instant::now();
 
         Ok(ImguiLayer {
@@ -36,7 +37,8 @@ impl Layer for ImguiLayer {
     }
 
     fn render(&mut self, state: &EngineState) {
-        self.imgui_sdl2.prepare_frame(self.context.io_mut(), &state.window, &state.mouse_state);
+        self.imgui_sdl2
+            .prepare_frame(self.context.io_mut(), &state.window, &state.mouse_state);
 
         let now = Instant::now();
         let delta = now - self.frame_time;
