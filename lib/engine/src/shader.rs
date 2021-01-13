@@ -8,6 +8,7 @@ use std::{
     ptr,
 };
 use thiserror::Error;
+use crate::glm;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -108,6 +109,15 @@ impl Program {
             let loc = self.gl.GetUniformLocation(self.id, name.as_ptr() as _);
             self.gl.Uniform1i(loc, tex.index() as _);
             tex.bind();
+        }
+    }
+
+    pub fn bind_matrix(&self, name: &str, mat: glm::Mat4) {
+        let name = CString::new(name).unwrap();
+
+        unsafe {
+            let loc = self.gl.GetUniformLocation(self.id, name.as_ptr() as _);
+            self.gl.UniformMatrix4fv(loc, 1, gl::FALSE, mat.as_slice().as_ptr());
         }
     }
 }

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use engine::{
-    buffer, data, gl, resources::Resources, sdl2, EngineState, Layer, MainLoop, Program, Texture,
+    buffer, data, gl, resources::Resources, sdl2, EngineState, Layer, MainLoop, Program, Texture, glm,
 };
 use gl_derive::VertexAttribPointers;
-use std::{path::Path, ptr};
+use std::{path::Path, ptr, time::Instant};
 
 #[derive(VertexAttribPointers, Copy, Clone, Debug)]
 #[repr(C, packed)]
@@ -25,6 +25,7 @@ struct Triangle {
     shader_program: Program,
     crate_tex: Texture,
     face_tex: Texture,
+    start_time: Instant,
 }
 
 impl Layer for Triangle {
@@ -76,6 +77,7 @@ impl Layer for Triangle {
             face_tex,
             _vbo: vbo,
             shader_program,
+            start_time: Instant::now(),
         })
     }
 
@@ -100,9 +102,16 @@ impl Layer for Triangle {
             state.gl.Clear(gl::COLOR_BUFFER_BIT);
         }
 
+        let time = (Instant::now() - self.start_time).as_secs_f32();
+
+        let trans = glm::Mat4::identity();
+        let trans = glm::translate(&trans, &glm::vec3(0.5, -0.5, 0.0));
+        let trans = glm::rotate(&trans, time, &glm::vec3(0.0, 0.0, 1.0));
+
         self.shader_program.set_used();
         self.shader_program.bind_texture("crate", &self.crate_tex);
         self.shader_program.bind_texture("face", &self.face_tex);
+        self.shader_program.bind_matrix("transform", trans);
         self.vao.bind();
         self.ebo.bind();
         unsafe {

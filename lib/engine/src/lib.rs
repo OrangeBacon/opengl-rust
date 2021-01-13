@@ -19,3 +19,4 @@ pub use main_loop::{EngineState, MainLoop};
 
 pub use gl;
 pub use sdl2;
+pub use nalgebra_glm as glm;
