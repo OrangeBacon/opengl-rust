@@ -1,9 +1,10 @@
 use anyhow::Result;
 use engine::{
-    buffer, data, gl, resources::Resources, sdl2, EngineState, Layer, MainLoop, Program, Texture, glm,
+    buffer, data, gl, glm, resources::Resources, sdl2, EngineState, Layer, MainLoop, Program,
+    Texture,
 };
 use gl_derive::VertexAttribPointers;
-use std::{path::Path, ptr, time::Instant};
+use std::{path::Path, time::Instant};
 
 #[derive(VertexAttribPointers, Copy, Clone, Debug)]
 #[repr(C, packed)]
@@ -12,16 +13,12 @@ struct Vertex {
     pos: data::f32_f32_f32,
 
     #[location = 1]
-    clr: data::f32_f32_f32,
-
-    #[location = 2]
     uv: data::f32_f32,
 }
 
 struct Triangle {
     _vbo: buffer::ArrayBuffer,
     vao: buffer::VertexArray,
-    ebo: buffer::ElementArrayBuffer,
     shader_program: Program,
     crate_tex: Texture,
     face_tex: Texture,
@@ -37,19 +34,49 @@ impl Layer for Triangle {
         let face_tex = Texture::from_res(&state.gl, &res, "awesomeface.png", 1)?;
 
         #[rustfmt::skip]
-        let vertices: Vec<Vertex> = vec![
-            // positions                            // colours
-            Vertex { pos: ( 0.5,  0.5, 0.0).into(), clr: (1.0, 0.0, 0.0).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: ( 0.5, -0.5, 0.0).into(), clr: (0.0, 1.0, 0.0).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: (-0.5, -0.5, 0.0).into(), clr: (0.0, 0.0, 1.0).into(), uv: (0.0, 0.0).into() },
-            Vertex { pos: (-0.5,  0.5, 0.0).into(), clr: (1.0, 1.0, 0.0).into(), uv: (0.0, 1.0).into() },
+        let vertices = vec![
+            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 0.0).into() },
+            Vertex { pos: ( 0.5, -0.5, -0.5).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: ( 0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: ( 0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: (-0.5,  0.5, -0.5).into(), uv: (0.0, 1.0).into() },
+            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 0.0).into() },
+
+            Vertex { pos: (-0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
+            Vertex { pos: ( 0.5, -0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: (-0.5,  0.5,  0.5).into(), uv: (0.0, 1.0).into() },
+            Vertex { pos: (-0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
+
+            Vertex { pos: (-0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: (-0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
+            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
+            Vertex { pos: (-0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
+            Vertex { pos: (-0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+
+            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: ( 0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: ( 0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
+            Vertex { pos: ( 0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
+            Vertex { pos: ( 0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
+            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+
+            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
+            Vertex { pos: ( 0.5, -0.5, -0.5).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: ( 0.5, -0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: ( 0.5, -0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: (-0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
+            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
+
+            Vertex { pos: (-0.5,  0.5, -0.5).into(), uv: (0.0, 1.0).into() },
+            Vertex { pos: ( 0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
+            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
+            Vertex { pos: (-0.5,  0.5,  0.5).into(), uv: (0.0, 0.0).into() },
+            Vertex { pos: (-0.5,  0.5, -0.5).into(), uv: (0.0, 1.0).into() },
         ];
-
-        let indices = vec![0, 1, 3, 1, 2, 3];
-
-        let ebo = buffer::ElementArrayBuffer::new(&state.gl);
-        ebo.bind();
-        ebo.static_draw_data(&indices);
 
         let vbo = buffer::ArrayBuffer::new(&state.gl);
         vbo.bind();
@@ -63,16 +90,14 @@ impl Layer for Triangle {
         vbo.unbind();
         vao.unbind();
 
-        ebo.unbind();
-
         unsafe {
             state.gl.Viewport(0, 0, 900, 700);
             state.gl.ClearColor(0.3, 0.3, 0.5, 1.0);
+            state.gl.Enable(gl::DEPTH_TEST);
         }
 
         Ok(Triangle {
             vao,
-            ebo,
             crate_tex,
             face_tex,
             _vbo: vbo,
@@ -99,25 +124,54 @@ impl Layer for Triangle {
 
     fn render(&mut self, state: &EngineState) {
         unsafe {
-            state.gl.Clear(gl::COLOR_BUFFER_BIT);
+            state.gl.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
         }
+
+        let (width, height) = state.window.size();
 
         let time = (Instant::now() - self.start_time).as_secs_f32();
 
-        let trans = glm::Mat4::identity();
-        let trans = glm::translate(&trans, &glm::vec3(0.5, -0.5, 0.0));
-        let trans = glm::rotate(&trans, time, &glm::vec3(0.0, 0.0, 1.0));
+        let view = glm::Mat4::identity();
+        let view = glm::translate(&view, &glm::vec3(0.0, 0.0, -3.0));
+
+        let projection = glm::perspective(
+            45.0f32.to_radians(),
+            width as f32 / height as f32,
+            0.1,
+            100.0,
+        );
+
+        let positions = [
+            glm::vec3(0.0, 0.0, 0.0),
+            glm::vec3(2.0, 5.0, -15.0),
+            glm::vec3(-1.5, -2.2, -2.5),
+            glm::vec3(-3.8, -2.0, -12.3),
+            glm::vec3(2.4, -0.4, -3.5),
+            glm::vec3(-1.7, 3.0, -7.5),
+            glm::vec3(1.3, -2.0, -2.5),
+            glm::vec3(1.5, 2.0, -2.5),
+            glm::vec3(1.5, 0.2, -1.5),
+            glm::vec3(-1.3, 1.0, -1.5),
+        ];
 
         self.shader_program.set_used();
         self.shader_program.bind_texture("crate", &self.crate_tex);
         self.shader_program.bind_texture("face", &self.face_tex);
-        self.shader_program.bind_matrix("transform", trans);
+        self.shader_program.bind_matrix("view", view);
+        self.shader_program.bind_matrix("projection", projection);
         self.vao.bind();
-        self.ebo.bind();
-        unsafe {
-            state
-                .gl
-                .DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+
+        for (i, pos) in positions.iter().enumerate() {
+            let angle = 20.0 * (i as f32 + time);
+
+            let model = glm::Mat4::identity();
+            let model = glm::translate(&model, pos);
+            let model = glm::rotate(&model, angle.to_radians(), &glm::vec3(1.0, 0.3, 0.5));
+
+            self.shader_program.bind_matrix("model", model);
+            unsafe {
+                state.gl.DrawArrays(gl::TRIANGLES, 0, 36);
+            }
         }
     }
 }

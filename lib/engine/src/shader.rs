@@ -1,3 +1,4 @@
+use crate::glm;
 use crate::{
     resources::{Error as ResourceError, Resources},
     Texture,
@@ -8,7 +9,6 @@ use std::{
     ptr,
 };
 use thiserror::Error;
-use crate::glm;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -117,7 +117,8 @@ impl Program {
 
         unsafe {
             let loc = self.gl.GetUniformLocation(self.id, name.as_ptr() as _);
-            self.gl.UniformMatrix4fv(loc, 1, gl::FALSE, mat.as_slice().as_ptr());
+            self.gl
+                .UniformMatrix4fv(loc, 1, gl::FALSE, mat.as_slice().as_ptr());
         }
     }
 }
