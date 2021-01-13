@@ -36,8 +36,8 @@ impl Layer for Triangle {
         let face_tex = Texture::from_res(&state.gl, &res, "awesomeface.png", 1)?;
 
         #[rustfmt::skip]
-        let verticies: Vec<Vertex> = vec![
-            // positions                            // colors
+        let vertices: Vec<Vertex> = vec![
+            // positions                            // colours
             Vertex { pos: ( 0.5,  0.5, 0.0).into(), clr: (1.0, 0.0, 0.0).into(), uv: (1.0, 1.0).into() },
             Vertex { pos: ( 0.5, -0.5, 0.0).into(), clr: (0.0, 1.0, 0.0).into(), uv: (1.0, 0.0).into() },
             Vertex { pos: (-0.5, -0.5, 0.0).into(), clr: (0.0, 0.0, 1.0).into(), uv: (0.0, 0.0).into() },
@@ -52,7 +52,7 @@ impl Layer for Triangle {
 
         let vbo = buffer::ArrayBuffer::new(&state.gl);
         vbo.bind();
-        vbo.static_draw_data(&verticies);
+        vbo.static_draw_data(&vertices);
         vbo.unbind();
 
         let vao = buffer::VertexArray::new(&state.gl);

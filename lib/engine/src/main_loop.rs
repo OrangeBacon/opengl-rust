@@ -19,11 +19,11 @@ enum SdlError {
     #[error("Error while initialising OpenGl Context: {reason}")]
     GlContext { reason: String },
 
-    #[error("Error while intialising SLD2 event pump: {reason}")]
+    #[error("Error while initialising SLD2 event pump: {reason}")]
     Event { reason: String },
 }
 
-/// Graphics api state that is avaliable to render layers.
+/// Graphics api state that is available to render layers.
 pub struct EngineState {
     /// Main window rendered to.
     pub window: sdl2::video::Window,
@@ -35,7 +35,7 @@ pub struct EngineState {
     pub mouse_state: sdl2::mouse::MouseState,
 
     /// SDL2 video system, used for getting window properties,
-    /// incuding the OpenGL context loader, clipboard and text input.
+    /// including the OpenGL context loader, clipboard and text input.
     pub video: sdl2::VideoSubsystem,
 }
 
@@ -110,7 +110,7 @@ impl MainLoop {
             .event_pump()
             .map_err(|e| SdlError::Event { reason: e })?;
 
-        // A mouse state is required in intitialisation so that the struct
+        // A mouse state is required in initialisation so that the struct
         // field is initialised, it will likely be overwritten during the
         // first frame
         let mouse_state = events.mouse_state();
@@ -128,7 +128,7 @@ impl MainLoop {
         })
     }
 
-    /// Adds a new layer to the renderer. Intialises the layer based upon
+    /// Adds a new layer to the renderer. Initialises the layer based upon
     /// the engine state.  Todo: allow layers to be configured based upon
     /// other settings, depending on the layer.
     pub fn add_layer<T: 'static + crate::Layer>(&mut self) -> Result<()> {
@@ -139,7 +139,7 @@ impl MainLoop {
     }
 
     /// Start the game loop, this function will not return until the main window
-    /// is closed, only saving, error reporting, etc should happen afterwrds.
+    /// is closed, only saving, error reporting, etc should happen afterwards.
     pub fn run(mut self) -> Result<()> {
         'main: loop {
             for event in self.events.poll_iter() {
@@ -199,7 +199,7 @@ fn enable_gl_debugging(gl: &gl::Gl) {
     }
 }
 
-/// Debuging callback
+/// Debugging callback
 #[cfg(debug_assertions)]
 extern "system" fn gl_debug_log(
     source: GLenum,
@@ -210,7 +210,7 @@ extern "system" fn gl_debug_log(
     message: *const GLchar,
     _user_param: *mut GLvoid,
 ) {
-    // id of trivial, non error/warning infomation messages
+    // id of trivial, non error/warning information messages
     // not worth printing, would obscure actual errors
     if id == 0x20071 {
         return;

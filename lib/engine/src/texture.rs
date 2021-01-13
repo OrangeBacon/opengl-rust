@@ -31,7 +31,7 @@ pub struct Texture {
 }
 
 impl Texture {
-    /// Readan image from a file and load it into the GPU
+    /// Read an image from a file and load it into the GPU
     /// gl: current OpenGL context to load using
     /// res: current resource loader
     /// name: path to texture relative to the current resource loader
