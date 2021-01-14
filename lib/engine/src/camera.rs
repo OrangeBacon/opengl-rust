@@ -95,6 +95,12 @@ impl Camera {
         if state.inputs.is_key_pressed(Scancode::D) {
             self.pos += camera_speed * self.right;
         }
+        if state.inputs.is_key_pressed(Scancode::Space) {
+            self.pos += camera_speed * self.world_up;
+        }
+        if state.inputs.is_key_pressed(Scancode::LShift) {
+            self.pos -= camera_speed * self.world_up;
+        }
 
         // move the camera based upon mouse movement
         let x_offset = state.inputs.delta_x as f32 * self.mouse_sensitivity;
