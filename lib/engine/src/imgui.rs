@@ -44,8 +44,11 @@ impl Layer for ImguiLayer {
     fn update(&mut self, _state: &EngineState, _time: f32, _dt: f32) {}
 
     fn render(&mut self, state: &EngineState) {
-        self.imgui_sdl2
-            .prepare_frame(self.context.io_mut(), &state.window, &state.inputs.mouse_state);
+        self.imgui_sdl2.prepare_frame(
+            self.context.io_mut(),
+            &state.window,
+            &state.inputs.mouse_state,
+        );
 
         let now = Instant::now();
         let delta = now - self.frame_time;

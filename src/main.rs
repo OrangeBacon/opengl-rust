@@ -1,5 +1,10 @@
 use anyhow::Result;
-use engine::{EngineState, EventResult, Layer, MainLoop, Program, Texture, buffer, data, gl, glm, resources::Resources, sdl2::{self, keyboard::Scancode}};
+use engine::{
+    buffer, data, gl, glm,
+    resources::Resources,
+    sdl2::{self, keyboard::Scancode},
+    Camera, EngineState, EventResult, Layer, MainLoop, Program, Texture,
+};
 use gl_derive::VertexAttribPointers;
 use std::path::Path;
 
@@ -19,11 +24,7 @@ struct Triangle {
     shader_program: Program,
     crate_tex: Texture,
     face_tex: Texture,
-    pos: glm::Vec3,
-    front: glm::Vec3,
-    up: glm::Vec3,
-    yaw: f32,
-    pitch: f32,
+    camera: Camera,
 }
 
 impl Layer for Triangle {
@@ -105,11 +106,7 @@ impl Layer for Triangle {
             face_tex,
             _vbo: vbo,
             shader_program,
-            pos: glm::vec3(0.0, 0.0, 3.0),
-            front: glm::vec3(0.0, 0.0, -1.0),
-            up: glm::vec3(0.0, 1.0, 0.0),
-            yaw: -90.0,
-            pitch: 0.0,
+            camera: Camera::new(),
         })
     }
 
@@ -125,49 +122,16 @@ impl Layer for Triangle {
                 EventResult::Handled
             }
 
-            Event::KeyDown { scancode: Some(Scancode::Escape), .. } => EventResult::Exit,
+            Event::KeyDown {
+                scancode: Some(Scancode::Escape),
+                ..
+            } => EventResult::Exit,
             _ => EventResult::Ignored,
         }
     }
 
     fn update(&mut self, state: &EngineState, _time: f32, dt: f32) {
-        let camera_speed = 2.5 * dt;
-        if state.inputs.is_key_pressed(Scancode::W) {
-            self.pos += camera_speed * self.front;
-        }
-        if state.inputs.is_key_pressed(Scancode::S) {
-            self.pos -= camera_speed * self.front;
-        }
-        if state.inputs.is_key_pressed(Scancode::A) {
-            self.pos -= glm::normalize(&glm::cross(&self.front, &self.up)) * camera_speed;
-        }
-        if state.inputs.is_key_pressed(Scancode::D) {
-            self.pos += glm::normalize(&glm::cross(&self.front, &self.up)) * camera_speed;
-        }
-
-        let sensitivity = 0.1;
-        let x_offset = state.inputs.delta_x as f32 * sensitivity;
-        let y_offset = state.inputs.delta_y as f32 * sensitivity;
-
-        self.yaw += x_offset;
-        self.pitch += y_offset;
-
-        if self.pitch > 89.0 {
-            self.pitch = 89.0
-        }
-        if self.pitch < -89.0 {
-            self.pitch = -89.0
-        }
-
-        let yaw = self.yaw.to_radians();
-        let pitch = self.pitch.to_radians();
-
-        let direction = glm::vec3(
-            yaw.cos() * pitch.cos(),
-            pitch.sin(),
-            yaw.sin() * pitch.cos(),
-        );
-        self.front = glm::normalize(&direction);
+        self.camera.update(state, dt);
     }
 
     fn render(&mut self, state: &EngineState) {
@@ -179,12 +143,12 @@ impl Layer for Triangle {
 
         let projection = glm::perspective(
             width as f32 / height as f32,
-            45.0f32.to_radians(),
+            self.camera.get_fov(),
             0.1,
             100.0,
         );
 
-        let view = glm::look_at(&self.pos, &(self.pos + self.front), &self.up);
+        let view = self.camera.get_view();
 
         let positions = [
             glm::vec3(0.0, 0.0, 0.0),

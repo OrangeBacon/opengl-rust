@@ -1,6 +1,9 @@
 use anyhow::Result;
 use gl::types::*;
-use sdl2::{keyboard::Scancode, mouse::{MouseButton, MouseState, MouseWheelDirection}};
+use sdl2::{
+    keyboard::Scancode,
+    mouse::{MouseButton, MouseState, MouseWheelDirection},
+};
 use std::{cell::RefCell, collections::HashMap, ptr, rc::Rc, time::Instant};
 use thiserror::Error;
 
@@ -28,7 +31,6 @@ enum SdlError {
 /// Current state of a key
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum KeyState {
-
     /// The key is not currently pressed
     None,
 
@@ -44,7 +46,6 @@ pub enum KeyState {
 
 /// The state of the user input on the current frame
 pub struct InputState {
-
     /// Current mouse horizontal position
     pub x: i32,
 
@@ -114,14 +115,18 @@ impl InputState {
 
         self.mouse_buttons = mouse_state.mouse_buttons().collect();
 
-        self.keys = self.keys.iter().map(|(scan, state)| {
-            let new_state = match state {
-                KeyState::Down => KeyState::Hold,
-                KeyState::Up => KeyState::None,
-                a => *a
-            };
-            (*scan, new_state)
-        }).collect();
+        self.keys = self
+            .keys
+            .iter()
+            .map(|(scan, state)| {
+                let new_state = match state {
+                    KeyState::Down => KeyState::Hold,
+                    KeyState::Up => KeyState::None,
+                    a => *a,
+                };
+                (*scan, new_state)
+            })
+            .collect();
 
         self.mouse_state = mouse_state;
     }
@@ -197,9 +202,9 @@ impl MainLoop {
             .resizable()
             .build()?;
 
-        /*let mouse = sdl.mouse();
+        let mouse = sdl.mouse();
         mouse.capture(true);
-        mouse.set_relative_mouse_mode(true);*/
+        mouse.set_relative_mouse_mode(true);
 
         // Enable OpenGL for the main window
         let ctx = window
@@ -322,13 +327,21 @@ fn default_event_handler(state: &mut EngineState, event: &sdl2::event::Event) ->
     use sdl2::event::Event;
     match event {
         Event::Quit { .. } => return EventResult::Exit,
-        Event::KeyDown { scancode: Some(scan), .. } => {
+        Event::KeyDown {
+            scancode: Some(scan),
+            ..
+        } => {
             state.inputs.keys.insert(*scan, KeyState::Down);
         }
-        Event::KeyUp { scancode: Some(scan), .. } => {
+        Event::KeyUp {
+            scancode: Some(scan),
+            ..
+        } => {
             state.inputs.keys.insert(*scan, KeyState::Up);
         }
-        Event::MouseWheel { x, y, direction, .. } => {
+        Event::MouseWheel {
+            x, y, direction, ..
+        } => {
             let x = if *direction == MouseWheelDirection::Flipped {
                 y
             } else {
