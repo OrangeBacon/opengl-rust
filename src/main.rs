@@ -1,8 +1,5 @@
 use anyhow::Result;
-use engine::{
-    buffer, data, gl, glm, resources::Resources, sdl2, EngineState, Layer, MainLoop, Program,
-    Texture,
-};
+use engine::{EngineState, EventResult, Layer, MainLoop, Program, Texture, buffer, data, gl, glm, resources::Resources, sdl2};
 use gl_derive::VertexAttribPointers;
 use std::{collections::HashSet, path::Path, time::Instant};
 
@@ -124,36 +121,40 @@ impl Layer for Triangle {
         })
     }
 
-    fn handle_event(&mut self, event: &sdl2::event::Event, state: &EngineState) -> bool {
+    fn handle_event(&mut self, state: &EngineState, event: &sdl2::event::Event) -> EventResult {
+        use sdl2::event::{Event, WindowEvent};
         match event {
-            sdl2::event::Event::Quit { .. } => return true,
-            sdl2::event::Event::Window { win_event, .. } => {
-                if let sdl2::event::WindowEvent::Resized(w, h) = win_event {
+            Event::Quit { .. } => EventResult::Exit,
+            Event::Window { win_event, .. } => {
+                if let WindowEvent::Resized(w, h) = win_event {
                     unsafe {
                         state.gl.Viewport(0, 0, *w, *h);
                     }
                 }
+                EventResult::Handled
             }
-            sdl2::event::Event::KeyDown {
+            Event::KeyDown {
                 keycode: Some(keycode),
                 ..
             } => {
                 if *keycode == sdl2::keyboard::Keycode::Escape {
-                    return true;
+                    return EventResult::Exit;
                 }
                 self.key_state.insert(*keycode);
+                EventResult::Handled
             }
-            sdl2::event::Event::KeyUp {
+            Event::KeyUp {
                 keycode: Some(keycode),
                 ..
             } => {
                 self.key_state.remove(keycode);
+                EventResult::Handled
             }
-            _ => (),
+            _ => EventResult::Ignored,
         }
-
-        false
     }
+
+    fn update(&mut self, _state: &EngineState, _time: f64, _dt: f64) {}
 
     fn render(&mut self, state: &EngineState) {
         unsafe {

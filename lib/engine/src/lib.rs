@@ -12,7 +12,7 @@ mod texture;
 pub use texture::Texture;
 
 mod layer;
-pub use layer::Layer;
+pub use layer::{EventResult, Layer};
 
 mod main_loop;
 pub use main_loop::{EngineState, MainLoop};

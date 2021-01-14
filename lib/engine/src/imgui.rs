@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::{main_loop::EngineState, Layer};
+use crate::{main_loop::EngineState, EventResult, Layer};
 use anyhow::Result;
 use sdl2::event::Event;
 
@@ -30,11 +30,18 @@ impl Layer for ImguiLayer {
         })
     }
 
-    fn handle_event(&mut self, event: &Event, _state: &EngineState) -> bool {
+    fn handle_event(&mut self, _state: &EngineState, event: &Event) -> EventResult {
         self.imgui_sdl2.handle_event(&mut self.context, event);
 
-        false
+        if self.imgui_sdl2.ignore_event(event) {
+            EventResult::Handled
+        } else {
+            EventResult::Ignored
+        }
     }
+
+    // imgui does everything in the render function, no update needed
+    fn update(&mut self, _state: &EngineState, _time: f64, _dt: f64) {}
 
     fn render(&mut self, state: &EngineState) {
         self.imgui_sdl2

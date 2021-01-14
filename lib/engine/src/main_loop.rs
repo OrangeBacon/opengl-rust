@@ -1,8 +1,10 @@
 use anyhow::Result;
 use gl::types::*;
-use std::cell::RefCell;
+use std::{cell::RefCell, time::Instant};
 use std::{ptr, rc::Rc};
 use thiserror::Error;
+
+use crate::EventResult;
 
 /// Error type used during initialisation of SDL2 - the default bindings only
 /// output `String`, so this type annotates the string with the function that
@@ -145,16 +147,39 @@ impl MainLoop {
     /// Start the game loop, this function will not return until the main window
     /// is closed, only saving, error reporting, etc should happen afterwards.
     pub fn run(mut self) -> Result<()> {
+        let mut t = 0.0;
+        const DT: f64 = 0.05;
+        let mut current_time = Instant::now();
+        let mut accumulator = 0.0;
+
         'main: loop {
+            let new_time = Instant::now();
+            let frame_time = new_time - current_time;
+            current_time = new_time;
+
+            accumulator += frame_time.as_secs_f64();
+
             for event in self.events.poll_iter() {
                 for layer in self.layers.iter_mut() {
-                    if layer.borrow_mut().handle_event(&event, &self.state) {
-                        break 'main;
+                    let res = layer.borrow_mut().handle_event(&self.state, &event);
+                    match res {
+                        EventResult::Handled => break,
+                        EventResult::Exit => break 'main,
+                        EventResult::Ignored => (),
                     }
                 }
             }
 
             self.state.mouse_state = self.events.mouse_state();
+
+            while accumulator >= DT {
+                for layer in self.layers.iter_mut() {
+                    layer.borrow_mut().update(&self.state, t, DT);
+                }
+
+                accumulator -= DT;
+                t += DT;
+            }
 
             for layer in self.layers.iter_mut() {
                 layer.borrow_mut().render(&self.state);
