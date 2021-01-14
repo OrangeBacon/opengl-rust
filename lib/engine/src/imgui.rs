@@ -41,11 +41,11 @@ impl Layer for ImguiLayer {
     }
 
     // imgui does everything in the render function, no update needed
-    fn update(&mut self, _state: &EngineState, _time: f64, _dt: f64) {}
+    fn update(&mut self, _state: &EngineState, _time: f32, _dt: f32) {}
 
     fn render(&mut self, state: &EngineState) {
         self.imgui_sdl2
-            .prepare_frame(self.context.io_mut(), &state.window, &state.mouse_state);
+            .prepare_frame(self.context.io_mut(), &state.window, &state.inputs.mouse_state);
 
         let now = Instant::now();
         let delta = now - self.frame_time;

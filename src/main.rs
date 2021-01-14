@@ -1,7 +1,7 @@
 use anyhow::Result;
-use engine::{EngineState, EventResult, Layer, MainLoop, Program, Texture, buffer, data, gl, glm, resources::Resources, sdl2};
+use engine::{EngineState, EventResult, Layer, MainLoop, Program, Texture, buffer, data, gl, glm, resources::Resources, sdl2::{self, keyboard::Scancode}};
 use gl_derive::VertexAttribPointers;
-use std::{collections::HashSet, path::Path, time::Instant};
+use std::path::Path;
 
 #[derive(VertexAttribPointers, Copy, Clone, Debug)]
 #[repr(C, packed)]
@@ -19,13 +19,9 @@ struct Triangle {
     shader_program: Program,
     crate_tex: Texture,
     face_tex: Texture,
-    start_time: Instant,
-    last_frame: Instant,
     pos: glm::Vec3,
     front: glm::Vec3,
     up: glm::Vec3,
-    key_state: HashSet<sdl2::keyboard::Keycode>,
-    previous_mouse: sdl2::mouse::MouseState,
     yaw: f32,
     pitch: f32,
 }
@@ -109,13 +105,9 @@ impl Layer for Triangle {
             face_tex,
             _vbo: vbo,
             shader_program,
-            start_time: Instant::now(),
-            last_frame: Instant::now(),
             pos: glm::vec3(0.0, 0.0, 3.0),
             front: glm::vec3(0.0, 0.0, -1.0),
             up: glm::vec3(0.0, 1.0, 0.0),
-            key_state: HashSet::new(),
-            previous_mouse: state.mouse_state,
             yaw: -90.0,
             pitch: 0.0,
         })
@@ -124,7 +116,6 @@ impl Layer for Triangle {
     fn handle_event(&mut self, state: &EngineState, event: &sdl2::event::Event) -> EventResult {
         use sdl2::event::{Event, WindowEvent};
         match event {
-            Event::Quit { .. } => EventResult::Exit,
             Event::Window { win_event, .. } => {
                 if let WindowEvent::Resized(w, h) = win_event {
                     unsafe {
@@ -133,65 +124,30 @@ impl Layer for Triangle {
                 }
                 EventResult::Handled
             }
-            Event::KeyDown {
-                keycode: Some(keycode),
-                ..
-            } => {
-                if *keycode == sdl2::keyboard::Keycode::Escape {
-                    return EventResult::Exit;
-                }
-                self.key_state.insert(*keycode);
-                EventResult::Handled
-            }
-            Event::KeyUp {
-                keycode: Some(keycode),
-                ..
-            } => {
-                self.key_state.remove(keycode);
-                EventResult::Handled
-            }
+
+            Event::KeyDown { scancode: Some(Scancode::Escape), .. } => EventResult::Exit,
             _ => EventResult::Ignored,
         }
     }
 
-    fn update(&mut self, _state: &EngineState, _time: f64, _dt: f64) {}
-
-    fn render(&mut self, state: &EngineState) {
-        unsafe {
-            state.gl.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-        }
-
-        let start_time = Instant::now();
-
-        let total_time = (start_time - self.start_time).as_secs_f32();
-        let (width, height) = state.window.size();
-
-        let projection = glm::perspective(
-            width as f32 / height as f32,
-            45.0f32.to_radians(),
-            0.1,
-            100.0,
-        );
-
-        let camera_speed = 2.5 * (start_time - self.last_frame).as_secs_f32();
-        if self.key_state.contains(&sdl2::keyboard::Keycode::W) {
+    fn update(&mut self, state: &EngineState, _time: f32, dt: f32) {
+        let camera_speed = 2.5 * dt;
+        if state.inputs.is_key_pressed(Scancode::W) {
             self.pos += camera_speed * self.front;
         }
-        if self.key_state.contains(&sdl2::keyboard::Keycode::S) {
+        if state.inputs.is_key_pressed(Scancode::S) {
             self.pos -= camera_speed * self.front;
         }
-        if self.key_state.contains(&sdl2::keyboard::Keycode::A) {
+        if state.inputs.is_key_pressed(Scancode::A) {
             self.pos -= glm::normalize(&glm::cross(&self.front, &self.up)) * camera_speed;
         }
-        if self.key_state.contains(&sdl2::keyboard::Keycode::D) {
+        if state.inputs.is_key_pressed(Scancode::D) {
             self.pos += glm::normalize(&glm::cross(&self.front, &self.up)) * camera_speed;
         }
 
         let sensitivity = 0.1;
-        let x_offset = state.mouse_state.x() - self.previous_mouse.x();
-        let y_offset = state.mouse_state.y() - self.previous_mouse.y();
-        let x_offset = x_offset as f32 * sensitivity;
-        let y_offset = y_offset as f32 * sensitivity;
+        let x_offset = state.inputs.delta_x as f32 * sensitivity;
+        let y_offset = state.inputs.delta_y as f32 * sensitivity;
 
         self.yaw += x_offset;
         self.pitch += y_offset;
@@ -212,6 +168,21 @@ impl Layer for Triangle {
             yaw.sin() * pitch.cos(),
         );
         self.front = glm::normalize(&direction);
+    }
+
+    fn render(&mut self, state: &EngineState) {
+        unsafe {
+            state.gl.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
+        }
+
+        let (width, height) = state.window.size();
+
+        let projection = glm::perspective(
+            width as f32 / height as f32,
+            45.0f32.to_radians(),
+            0.1,
+            100.0,
+        );
 
         let view = glm::look_at(&self.pos, &(self.pos + self.front), &self.up);
 
@@ -236,7 +207,7 @@ impl Layer for Triangle {
         self.vao.bind();
 
         for (i, pos) in positions.iter().enumerate() {
-            let angle = 20.0 * (i as f32 + total_time);
+            let angle = 20.0 * (i as f32 + state.run_time);
 
             let model = glm::Mat4::identity();
             let model = glm::translate(&model, pos);
@@ -247,9 +218,6 @@ impl Layer for Triangle {
                 state.gl.DrawArrays(gl::TRIANGLES, 0, 36);
             }
         }
-
-        self.last_frame = Instant::now();
-        self.previous_mouse = state.mouse_state;
     }
 }
 

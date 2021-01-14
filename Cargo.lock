@@ -185,6 +185,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "gl",
+ "gl_derive",
  "image",
  "imgui",
  "imgui-opengl-renderer",

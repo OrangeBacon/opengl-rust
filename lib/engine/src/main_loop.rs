@@ -1,7 +1,7 @@
 use anyhow::Result;
 use gl::types::*;
-use std::{cell::RefCell, time::Instant};
-use std::{ptr, rc::Rc};
+use sdl2::{keyboard::Scancode, mouse::{MouseButton, MouseState, MouseWheelDirection}};
+use std::{cell::RefCell, collections::HashMap, ptr, rc::Rc, time::Instant};
 use thiserror::Error;
 
 use crate::EventResult;
@@ -25,6 +25,108 @@ enum SdlError {
     Event { reason: String },
 }
 
+/// Current state of a key
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum KeyState {
+
+    /// The key is not currently pressed
+    None,
+
+    /// The key was pressed down on this frame
+    Down,
+
+    /// The key is being held down
+    Hold,
+
+    /// The key was released on this frame
+    Up,
+}
+
+/// The state of the user input on the current frame
+pub struct InputState {
+
+    /// Current mouse horizontal position
+    pub x: i32,
+
+    /// Current mouse vertical position
+    pub y: i32,
+
+    /// How much the mouse moved horizontally this frame
+    pub delta_x: i32,
+
+    /// How much the mouse moved vertically this frame
+    pub delta_y: i32,
+
+    /// The current mouse wheel horizontal location
+    pub wheel_x: i32,
+
+    /// The current mouse wheel vertical location
+    pub wheel_y: i32,
+
+    /// How much the mouse wheel moved horizontally this frame
+    pub wheel_delta_x: i32,
+
+    /// How much the mouse wheel moved vertically this frame
+    pub wheel_delta_y: i32,
+
+    /// The state of the mouse buttons
+    mouse_buttons: HashMap<MouseButton, bool>,
+
+    /// The state of the keyboard
+    keys: HashMap<Scancode, KeyState>,
+
+    pub mouse_state: MouseState,
+}
+
+impl InputState {
+    /// Get the current state of a key
+    pub fn get_key_state(&self, key: Scancode) -> KeyState {
+        *self.keys.get(&key).unwrap_or(&KeyState::None)
+    }
+
+    /// Is a key currently pressed down
+    pub fn is_key_pressed(&self, key: Scancode) -> bool {
+        let key = *self.keys.get(&key).unwrap_or(&KeyState::None);
+        if key == KeyState::Down || key == KeyState::Hold {
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get the current state of a mouse button
+    pub fn get_mouse_button(&self, button: MouseButton) -> bool {
+        *self.mouse_buttons.get(&button).unwrap_or(&false)
+    }
+
+    /// updates the state for a new frame
+    pub fn update(&mut self, mouse_state: MouseState) {
+        let x = mouse_state.x();
+        let y = mouse_state.y();
+
+        self.delta_x = x - self.x;
+        self.delta_y = y - self.y;
+        self.x = x;
+        self.y = y;
+
+        self.wheel_delta_x = 0;
+        self.wheel_delta_y = 0;
+
+        self.mouse_buttons = mouse_state.mouse_buttons().collect();
+
+        self.keys = self.keys.iter().map(|(scan, state)| {
+            let new_state = match state {
+                KeyState::Down => KeyState::Hold,
+                KeyState::Up => KeyState::None,
+                a => *a
+            };
+            (*scan, new_state)
+        }).collect();
+
+        self.mouse_state = mouse_state;
+    }
+}
+
 /// Graphics api state that is available to render layers.
 pub struct EngineState {
     /// Main window rendered to.
@@ -33,12 +135,15 @@ pub struct EngineState {
     /// Primary OpenGL context, used when rendering to the main window.
     pub gl: gl::Gl,
 
-    /// The mouse state at the start of the current frame.
-    pub mouse_state: sdl2::mouse::MouseState,
+    /// The state of all keyboard and mouse inputs
+    pub inputs: InputState,
 
     /// SDL2 video system, used for getting window properties,
     /// including the OpenGL context loader, clipboard and text input.
     pub video: sdl2::VideoSubsystem,
+
+    /// The total time the program has been running in seconds
+    pub run_time: f32,
 }
 
 /// The main game storage, is used to call the main loop.
@@ -53,8 +158,6 @@ pub struct MainLoop {
     state: EngineState,
 
     /// The event system for the main window stored in the engine state.
-    /// This should probably be stored inside the engine state, but due to it
-    /// not being `Copy`, I kept getting double mutable borrow errors.
     events: sdl2::EventPump,
 
     /// The current OpenGL context. This struct will likely never be read,
@@ -121,6 +224,24 @@ impl MainLoop {
         // first frame
         let mouse_state = events.mouse_state();
 
+        let inputs = InputState {
+            x: mouse_state.x(),
+            y: mouse_state.y(),
+
+            delta_x: 0,
+            delta_y: 0,
+
+            wheel_x: 0,
+            wheel_y: 0,
+
+            wheel_delta_x: 0,
+            wheel_delta_y: 0,
+
+            mouse_buttons: HashMap::new(),
+            keys: HashMap::new(),
+            mouse_state: mouse_state,
+        };
+
         Ok(MainLoop {
             events,
             layers: vec![],
@@ -129,7 +250,8 @@ impl MainLoop {
                 gl,
                 window,
                 video,
-                mouse_state,
+                inputs,
+                run_time: 0.0,
             },
         })
     }
@@ -148,16 +270,19 @@ impl MainLoop {
     /// is closed, only saving, error reporting, etc should happen afterwards.
     pub fn run(mut self) -> Result<()> {
         let mut t = 0.0;
-        const DT: f64 = 0.05;
+        const DT: f32 = 1.0 / 60.0;
         let mut current_time = Instant::now();
         let mut accumulator = 0.0;
 
         'main: loop {
             let new_time = Instant::now();
-            let frame_time = new_time - current_time;
+            let frame_time = (new_time - current_time).as_secs_f32();
             current_time = new_time;
 
-            accumulator += frame_time.as_secs_f64();
+            accumulator += frame_time;
+            self.state.run_time += frame_time;
+
+            self.state.inputs.update(self.events.mouse_state());
 
             for event in self.events.poll_iter() {
                 for layer in self.layers.iter_mut() {
@@ -168,9 +293,11 @@ impl MainLoop {
                         EventResult::Ignored => (),
                     }
                 }
-            }
 
-            self.state.mouse_state = self.events.mouse_state();
+                if default_event_handler(&mut self.state, &event) == EventResult::Exit {
+                    break 'main;
+                }
+            }
 
             while accumulator >= DT {
                 for layer in self.layers.iter_mut() {
@@ -189,6 +316,40 @@ impl MainLoop {
 
         Ok(())
     }
+}
+
+fn default_event_handler(state: &mut EngineState, event: &sdl2::event::Event) -> EventResult {
+    use sdl2::event::Event;
+    match event {
+        Event::Quit { .. } => return EventResult::Exit,
+        Event::KeyDown { scancode: Some(scan), .. } => {
+            state.inputs.keys.insert(*scan, KeyState::Down);
+        }
+        Event::KeyUp { scancode: Some(scan), .. } => {
+            state.inputs.keys.insert(*scan, KeyState::Up);
+        }
+        Event::MouseWheel { x, y, direction, .. } => {
+            let x = if *direction == MouseWheelDirection::Flipped {
+                y
+            } else {
+                x
+            };
+
+            let y = if *direction == MouseWheelDirection::Flipped {
+                x
+            } else {
+                y
+            };
+
+            state.inputs.wheel_delta_x = *x;
+            state.inputs.wheel_delta_y = *y;
+            state.inputs.wheel_x += *x;
+            state.inputs.wheel_y += *y;
+        }
+        _ => (),
+    }
+
+    EventResult::Ignored
 }
 
 /// attach console print debugging to the provided OpenGL Context
