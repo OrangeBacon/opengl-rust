@@ -92,6 +92,10 @@ impl MainLoop {
             .resizable()
             .build()?;
 
+        /*let mouse = sdl.mouse();
+        mouse.capture(true);
+        mouse.set_relative_mouse_mode(true);*/
+
         // Enable OpenGL for the main window
         let ctx = window
             .gl_create_context()
