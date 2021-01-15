@@ -20,6 +20,8 @@ pub use main_loop::{EngineState, MainLoop};
 mod camera;
 pub use camera::Camera;
 
+pub mod gltf;
+
 pub use gl;
 pub use nalgebra_glm as glm;
 pub use sdl2;

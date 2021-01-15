@@ -55,6 +55,12 @@ impl Resources {
 
         Ok(buffer)
     }
+
+    pub fn load_string(&self, resource_name: &str) -> Result<String, Error> {
+        let file = fs::read_to_string(resource_name_to_path(&self.root_path, resource_name))?;
+
+        Ok(file)
+    }
 }
 
 // normalise path differences between windows and linux

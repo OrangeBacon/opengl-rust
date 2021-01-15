@@ -1,6 +1,7 @@
 use anyhow::Result;
 use engine::{
     buffer, data, gl, glm,
+    gltf::GltfModel,
     resources::Resources,
     sdl2::{self, keyboard::Scancode},
     Camera, EngineState, EventResult, Layer, MainLoop, Program, Texture,
@@ -30,6 +31,11 @@ struct Triangle {
 impl Layer for Triangle {
     fn new(state: &EngineState) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
+
+        let model = GltfModel::from_res(&state.gl, &res, "sea_keep_lonely_watcher/scene.gltf")?;
+
+        println!("{:#?}", model);
+
         let shader_program = Program::from_res(&state.gl, &res, "shaders/triangle")?;
 
         let crate_tex = Texture::from_res(&state.gl, &res, "container.jpg", 0)?;

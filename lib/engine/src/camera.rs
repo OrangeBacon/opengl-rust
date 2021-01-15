@@ -9,7 +9,6 @@ use crate::EngineState;
 /// No roll implemented. Scroll wheel to zoom in, wasd to move, mouse to chenge
 /// direction
 pub struct Camera {
-
     /// current camera position
     pos: glm::Vec3,
 
@@ -45,7 +44,6 @@ pub struct Camera {
 }
 
 impl Camera {
-
     /// create a new camera using the default settings
     pub fn new() -> Self {
         let up = glm::vec3(0.0, 1.0, 0.0);
@@ -80,7 +78,6 @@ impl Camera {
 
     /// update the camera's location from user input
     pub fn update(&mut self, state: &EngineState, dt: f32) {
-
         // move the camera with wasd
         let camera_speed = self.movement_speed * dt;
         if state.inputs.is_key_pressed(Scancode::W) {
