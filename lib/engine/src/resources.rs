@@ -32,6 +32,13 @@ impl Resources {
         })
     }
 
+    pub fn extend(&self, name: &Path) -> Self {
+        let mut path = self.root_path.clone();
+        path.extend(name);
+
+        Resources { root_path: path }
+    }
+
     pub fn load_cstring(&self, resource_name: &str) -> Result<ffi::CString, Error> {
         let mut file = fs::File::open(resource_name_to_path(&self.root_path, resource_name))?;
 

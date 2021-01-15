@@ -195,6 +195,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_repr",
+ "slotmap",
  "thiserror",
 ]
 
@@ -855,6 +856,15 @@ dependencies = [
  "num-complex",
  "num-traits",
  "paste",
+]
+
+[[package]]
+name = "slotmap"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab3003725ae562cf995f3dc82bb99e70926e09000396816765bb6d7adbe740b1"
+dependencies = [
+ "version_check",
 ]
 
 [[package]]

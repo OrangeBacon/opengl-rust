@@ -1,16 +1,15 @@
 use gl::types::*;
 use std::mem::size_of;
 
-pub struct Buffer<const TYPE: u32> {
+#[derive(Debug)]
+pub struct Buffer {
     gl: gl::Gl,
     vbo: GLuint,
+    buffer_type: GLenum,
 }
 
-pub type ArrayBuffer = Buffer<{ gl::ARRAY_BUFFER }>;
-pub type ElementArrayBuffer = Buffer<{ gl::ELEMENT_ARRAY_BUFFER }>;
-
-impl<const TYPE: u32> Buffer<TYPE> {
-    pub fn new(gl: &gl::Gl) -> Buffer<TYPE> {
+impl Buffer {
+    pub fn new(gl: &gl::Gl, buffer_type: GLenum) -> Buffer {
         let mut vbo = 0;
         unsafe {
             gl.GenBuffers(1, &mut vbo);
@@ -19,25 +18,26 @@ impl<const TYPE: u32> Buffer<TYPE> {
         Buffer {
             gl: gl.clone(),
             vbo,
+            buffer_type,
         }
     }
 
     pub fn bind(&self) {
         unsafe {
-            self.gl.BindBuffer(TYPE, self.vbo);
+            self.gl.BindBuffer(self.buffer_type, self.vbo);
         }
     }
 
     pub fn unbind(&self) {
         unsafe {
-            self.gl.BindBuffer(TYPE, 0);
+            self.gl.BindBuffer(self.buffer_type, 0);
         }
     }
 
     pub fn static_draw_data<T>(&self, data: &[T]) {
         unsafe {
             self.gl.BufferData(
-                TYPE,
+                self.buffer_type,
                 (data.len() * size_of::<T>()) as GLsizeiptr,
                 data.as_ptr() as *const GLvoid,
                 gl::STATIC_DRAW,
@@ -46,7 +46,7 @@ impl<const TYPE: u32> Buffer<TYPE> {
     }
 }
 
-impl<const TYPE: u32> Drop for Buffer<TYPE> {
+impl Drop for Buffer {
     fn drop(&mut self) {
         unsafe {
             self.gl.DeleteBuffers(1, &self.vbo);

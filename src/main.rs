@@ -1,10 +1,9 @@
 use anyhow::Result;
 use engine::{
-    buffer, data, gl, glm,
-    gltf::GltfModel,
+    data, gl, glm, gltf,
     resources::Resources,
     sdl2::{self, keyboard::Scancode},
-    Camera, EngineState, EventResult, Layer, MainLoop, Program, Texture,
+    Camera, EngineState, EventResult, Layer, MainLoop, Model,
 };
 use gl_derive::VertexAttribPointers;
 use std::path::Path;
@@ -20,11 +19,6 @@ struct Vertex {
 }
 
 struct Triangle {
-    _vbo: buffer::ArrayBuffer,
-    vao: buffer::VertexArray,
-    shader_program: Program,
-    crate_tex: Texture,
-    face_tex: Texture,
     camera: Camera,
 }
 
@@ -32,71 +26,9 @@ impl Layer for Triangle {
     fn new(state: &EngineState) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
 
-        let model = GltfModel::from_res(&state.gl, &res, "sea_keep_lonely_watcher/scene.gltf")?;
-
-        println!("{:#?}", model);
-
-        let shader_program = Program::from_res(&state.gl, &res, "shaders/triangle")?;
-
-        let crate_tex = Texture::from_res(&state.gl, &res, "container.jpg", 0)?;
-        let face_tex = Texture::from_res(&state.gl, &res, "awesomeface.png", 1)?;
-
-        #[rustfmt::skip]
-        let vertices = vec![
-            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 0.0).into() },
-            Vertex { pos: ( 0.5, -0.5, -0.5).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: ( 0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: ( 0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: (-0.5,  0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 0.0).into() },
-
-            Vertex { pos: (-0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
-            Vertex { pos: ( 0.5, -0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: (-0.5,  0.5,  0.5).into(), uv: (0.0, 1.0).into() },
-            Vertex { pos: (-0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
-
-            Vertex { pos: (-0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: (-0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-            Vertex { pos: (-0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
-            Vertex { pos: (-0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-
-            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: ( 0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: ( 0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-            Vertex { pos: ( 0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-            Vertex { pos: ( 0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
-            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-
-            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-            Vertex { pos: ( 0.5, -0.5, -0.5).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: ( 0.5, -0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: ( 0.5, -0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: (-0.5, -0.5,  0.5).into(), uv: (0.0, 0.0).into() },
-            Vertex { pos: (-0.5, -0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-
-            Vertex { pos: (-0.5,  0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-            Vertex { pos: ( 0.5,  0.5, -0.5).into(), uv: (1.0, 1.0).into() },
-            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: ( 0.5,  0.5,  0.5).into(), uv: (1.0, 0.0).into() },
-            Vertex { pos: (-0.5,  0.5,  0.5).into(), uv: (0.0, 0.0).into() },
-            Vertex { pos: (-0.5,  0.5, -0.5).into(), uv: (0.0, 1.0).into() },
-        ];
-
-        let vbo = buffer::ArrayBuffer::new(&state.gl);
-        vbo.bind();
-        vbo.static_draw_data(&vertices);
-        vbo.unbind();
-
-        let vao = buffer::VertexArray::new(&state.gl);
-        vao.bind();
-        vbo.bind();
-        Vertex::attrib_pointers(&state.gl);
-        vbo.unbind();
-        vao.unbind();
+        let model = gltf::Model::from_res(&state.gl, &res, "sea_keep_lonely_watcher/scene.gltf")?;
+        let mut model = Model::new(&model, &res, "sea_keep_lonely_watcher")?;
+        model.load_vram(&state.gl)?;
 
         let (width, height) = state.window.size();
 
@@ -107,11 +39,6 @@ impl Layer for Triangle {
         }
 
         Ok(Triangle {
-            vao,
-            crate_tex,
-            face_tex,
-            _vbo: vbo,
-            shader_program,
             camera: Camera::new(),
         })
     }
@@ -147,47 +74,14 @@ impl Layer for Triangle {
 
         let (width, height) = state.window.size();
 
-        let projection = glm::perspective(
+        let _projection = glm::perspective(
             width as f32 / height as f32,
             self.camera.get_fov(),
             0.1,
             100.0,
         );
 
-        let view = self.camera.get_view();
-
-        let positions = [
-            glm::vec3(0.0, 0.0, 0.0),
-            glm::vec3(2.0, 5.0, -15.0),
-            glm::vec3(-1.5, -2.2, -2.5),
-            glm::vec3(-3.8, -2.0, -12.3),
-            glm::vec3(2.4, -0.4, -3.5),
-            glm::vec3(-1.7, 3.0, -7.5),
-            glm::vec3(1.3, -2.0, -2.5),
-            glm::vec3(1.5, 2.0, -2.5),
-            glm::vec3(1.5, 0.2, -1.5),
-            glm::vec3(-1.3, 1.0, -1.5),
-        ];
-
-        self.shader_program.set_used();
-        self.shader_program.bind_texture("crate", &self.crate_tex);
-        self.shader_program.bind_texture("face", &self.face_tex);
-        self.shader_program.bind_matrix("view", view);
-        self.shader_program.bind_matrix("projection", projection);
-        self.vao.bind();
-
-        for (i, pos) in positions.iter().enumerate() {
-            let angle = 20.0 * (i as f32 + state.run_time);
-
-            let model = glm::Mat4::identity();
-            let model = glm::translate(&model, pos);
-            let model = glm::rotate(&model, angle.to_radians(), &glm::vec3(1.0, 0.3, 0.5));
-
-            self.shader_program.bind_matrix("model", model);
-            unsafe {
-                state.gl.DrawArrays(gl::TRIANGLES, 0, 36);
-            }
-        }
+        let _view = self.camera.get_view();
     }
 }
 

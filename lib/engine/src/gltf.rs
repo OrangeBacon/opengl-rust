@@ -1,3 +1,10 @@
+//! This file contains a parser for the json gLTF 3D object format
+//! It defines a deserialiser into rust structures, however does not do any
+//! processing on the file.
+//!
+//! For more infomation about the file format parsed in this file see
+//! https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md
+
 use std::collections::HashMap;
 
 use anyhow::Result;
@@ -25,7 +32,7 @@ pub enum Error {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct Accessor {
@@ -35,7 +42,7 @@ pub struct Accessor {
     #[serde(default)]
     pub byte_offset: usize,
 
-    component_type: ComponentType,
+    pub component_type: ComponentType,
 
     #[serde(default)]
     pub normalised: bool,
@@ -62,7 +69,7 @@ pub struct Accessor {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize_repr)]
+#[derive(Debug, Deserialize_repr, Clone)]
 #[repr(u32)]
 pub enum ComponentType {
     Byte = 5120,
@@ -73,7 +80,7 @@ pub enum ComponentType {
     Float = 5126,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Type {
     Scalar,
@@ -85,7 +92,7 @@ pub enum Type {
     Mat4,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct BufferSparse {
     pub count: usize,
@@ -99,7 +106,7 @@ pub struct BufferSparse {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct BufferIndices {
@@ -117,7 +124,7 @@ pub struct BufferIndices {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct BufferValues {
@@ -270,7 +277,7 @@ pub struct BufferView {
     pub byte_length: usize,
 
     pub byte_stride: Option<usize>,
-    pub target: Option<usize>,
+    pub target: Option<BufferViewTarget>,
 
     pub name: Option<String>,
 
@@ -279,6 +286,14 @@ pub struct BufferView {
 
     #[serde(default)]
     pub extras: Value,
+}
+
+#[derive(Debug, Deserialize_repr, Clone, Copy)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[repr(u32)]
+pub enum BufferViewTarget {
+    ArrayBuffer = 34962,
+    ElementArrayBuffer = 34963,
 }
 
 #[derive(Debug, Deserialize)]
@@ -334,7 +349,7 @@ pub struct CameraPerspective {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(deny_unknown_fields)]
-pub struct GltfModel {
+pub struct Model {
     #[serde(default)]
     pub extensions_used: Vec<String>,
 
@@ -535,7 +550,7 @@ pub struct TextureOcculusion {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Mesh {
     pub primitives: Vec<Primitive>,
@@ -553,7 +568,7 @@ pub struct Mesh {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Primitive {
     pub attributes: PrimitiveAttr,
@@ -575,7 +590,7 @@ pub struct Primitive {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 #[serde(rename_all = "UPPERCASE")]
 #[serde(deny_unknown_fields)]
 pub struct PrimitiveAttr {
@@ -593,7 +608,7 @@ pub struct PrimitiveAttr {
     pub extra: HashMap<String, Value>,
 }
 
-#[derive(Debug, Deserialize_repr)]
+#[derive(Debug, Deserialize_repr, Clone)]
 #[repr(u8)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum PrimitiveMode {
@@ -612,7 +627,7 @@ impl Default for PrimitiveMode {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "UPPERCASE")]
 pub struct PrimitiveTarget {
@@ -634,19 +649,15 @@ pub struct Node {
 
     pub skin: Option<usize>,
 
-    #[serde(default = "default_matrix")]
-    pub matrix: [f64; 16],
+    pub matrix: Option<[f32; 16]>,
 
     pub mesh: Option<usize>,
 
-    #[serde(default = "default_rotation")]
-    pub rotation: [f64; 4],
+    pub rotation: Option<[f32; 4]>,
 
-    #[serde(default = "default_scale")]
-    pub scale: [f64; 3],
+    pub scale: Option<[f32; 3]>,
 
-    #[serde(default)]
-    pub translation: [f64; 3],
+    pub translation: Option<[f32; 3]>,
 
     #[serde(default)]
     pub weights: Vec<f64>,
@@ -659,20 +670,6 @@ pub struct Node {
 
     #[serde(default)]
     pub extras: Value,
-}
-
-fn default_matrix() -> [f64; 16] {
-    [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-    ]
-}
-
-fn default_rotation() -> [f64; 4] {
-    [0.0, 0.0, 0.0, 1.0]
-}
-
-fn default_scale() -> [f64; 3] {
-    [1.0, 1.0, 1.0]
 }
 
 #[derive(Debug, Deserialize)]
@@ -820,14 +817,14 @@ pub struct TextureInfo {
     pub extras: Value,
 }
 
-impl GltfModel {
+impl Model {
     pub fn from_res(_gl: &gl::Gl, res: &Resources, name: &str) -> Result<Self, Error> {
         let file = res.load_string(name).map_err(|e| Error::Resource {
             name: name.to_string(),
             inner: e,
         })?;
 
-        let model: GltfModel = serde_json::from_str(&file).map_err(|e| Error::Parse {
+        let model: Model = serde_json::from_str(&file).map_err(|e| Error::Parse {
             name: name.to_string(),
             inner: e,
         })?;

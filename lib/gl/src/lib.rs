@@ -6,7 +6,7 @@ mod bindings {
 pub use bindings::Gl as InnerGl;
 pub use bindings::*;
 
-use std::{ops::Deref, rc::Rc};
+use std::{fmt, ops::Deref, rc::Rc};
 
 #[derive(Clone)]
 pub struct Gl {
@@ -29,5 +29,11 @@ impl Deref for Gl {
 
     fn deref(&self) -> &bindings::Gl {
         &self.inner
+    }
+}
+
+impl fmt::Debug for Gl {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{{gl context}}")
     }
 }
