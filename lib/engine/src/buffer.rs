@@ -5,7 +5,7 @@ use std::mem::size_of;
 pub struct Buffer {
     gl: gl::Gl,
     vbo: GLuint,
-    buffer_type: GLenum,
+    pub buffer_type: GLenum,
 }
 
 impl Buffer {
@@ -54,6 +54,7 @@ impl Drop for Buffer {
     }
 }
 
+#[derive(Debug)]
 pub struct VertexArray {
     gl: gl::Gl,
     vao: GLuint,

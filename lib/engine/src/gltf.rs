@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use gl::types::GLenum;
 use serde::Deserialize;
 use serde_json::Value;
 use serde_repr::Deserialize_repr;
@@ -80,6 +81,21 @@ pub enum ComponentType {
     Float = 5126,
 }
 
+impl ComponentType {
+    pub fn get_gl_type(&self) -> u32 {
+        use ComponentType::*;
+
+        match self {
+            Byte => gl::BYTE,
+            UnsignedByte => gl::UNSIGNED_BYTE,
+            Short => gl::SHORT,
+            UnsignedShort => gl::UNSIGNED_SHORT,
+            UnsignedInt => gl::UNSIGNED_INT,
+            Float => gl::FLOAT,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Type {
@@ -90,6 +106,22 @@ pub enum Type {
     Mat2,
     Mat3,
     Mat4,
+}
+
+impl Type {
+    pub fn component_count(&self) -> i32 {
+        use Type::*;
+
+        match self {
+            Scalar => 1,
+            Vec2 => 2,
+            Vec3 => 3,
+            Vec4 => 4,
+            Mat2 => 4,
+            Mat3 => 9,
+            Mat4 => 16,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -276,7 +308,7 @@ pub struct BufferView {
 
     pub byte_length: usize,
 
-    pub byte_stride: Option<usize>,
+    pub byte_stride: Option<i32>,
     pub target: Option<BufferViewTarget>,
 
     pub name: Option<String>,
@@ -594,15 +626,15 @@ pub struct Primitive {
 #[serde(rename_all = "UPPERCASE")]
 #[serde(deny_unknown_fields)]
 pub struct PrimitiveAttr {
-    pub position: Option<f32>,
-    pub normal: Option<f32>,
-    pub tangent: Option<f32>,
-    pub texcoord_0: Option<f64>,
-    pub texcoord_1: Option<f64>,
-    pub texcoord_2: Option<f64>,
-    pub color_0: Option<f64>,
-    pub joints_0: Option<u32>,
-    pub weights_0: Option<f64>,
+    pub position: Option<i32>,
+    pub normal: Option<i32>,
+    pub tangent: Option<i32>,
+    pub texcoord_0: Option<i32>,
+    pub texcoord_1: Option<i32>,
+    pub texcoord_2: Option<i32>,
+    pub color_0: Option<i32>,
+    pub joints_0: Option<i32>,
+    pub weights_0: Option<i32>,
 
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
@@ -624,6 +656,22 @@ pub enum PrimitiveMode {
 impl Default for PrimitiveMode {
     fn default() -> Self {
         PrimitiveMode::Triangles
+    }
+}
+
+impl PrimitiveMode {
+    pub fn to_gl_enum(&self) -> GLenum {
+        use PrimitiveMode::*;
+
+        match self {
+            Points => gl::POINTS,
+            Lines => gl::LINES,
+            LineLoop => gl::LINE_LOOP,
+            LineStrip => gl::LINE_STRIP,
+            Triangles => gl::TRIANGLES,
+            TriangleStrip => gl::TRIANGLE_STRIP,
+            TriangleFan => gl::TRIANGLE_FAN,
+        }
     }
 }
 

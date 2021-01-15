@@ -48,7 +48,7 @@ impl Camera {
     pub fn new() -> Self {
         let up = glm::vec3(0.0, 1.0, 0.0);
         let mut ret = Self {
-            pos: glm::vec3(0.0, 0.0, 3.0),
+            pos: glm::vec3(150.0, 150.0, 150.0),
             front: glm::vec3(0.0, 0.0, -1.0),
             right: glm::vec3(0.0, 0.0, 0.0),
             up: up,
@@ -56,7 +56,7 @@ impl Camera {
             yaw: -90.0,
             pitch: 0.0,
             zoom: 1.0,
-            movement_speed: 2.5,
+            movement_speed: 30.0,
             mouse_sensitivity: 0.2,
             zoom_speed: 0.1,
         };

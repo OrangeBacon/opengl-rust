@@ -1,10 +1,5 @@
 use anyhow::Result;
-use engine::{
-    data, gl, glm, gltf,
-    resources::Resources,
-    sdl2::{self, keyboard::Scancode},
-    Camera, EngineState, EventResult, Layer, MainLoop, Model,
-};
+use engine::{Camera, EngineState, EventResult, Layer, MainLoop, Model, Program, data, gl, glm, gltf, resources::Resources, sdl2::{self, keyboard::Scancode}};
 use gl_derive::VertexAttribPointers;
 use std::path::Path;
 
@@ -19,7 +14,9 @@ struct Vertex {
 }
 
 struct Triangle {
+    shader_program: Program,
     camera: Camera,
+    model: Model,
 }
 
 impl Layer for Triangle {
@@ -27,8 +24,10 @@ impl Layer for Triangle {
         let res = Resources::from_exe_path(Path::new("assets"))?;
 
         let model = gltf::Model::from_res(&state.gl, &res, "sea_keep_lonely_watcher/scene.gltf")?;
-        let mut model = Model::new(&model, &res, "sea_keep_lonely_watcher")?;
+        let mut model = Model::new(model, &res, "sea_keep_lonely_watcher")?;
         model.load_vram(&state.gl)?;
+
+        let shader_program = Program::from_res(&state.gl, &res, "shaders/triangle")?;
 
         let (width, height) = state.window.size();
 
@@ -36,9 +35,12 @@ impl Layer for Triangle {
             state.gl.Viewport(0, 0, width as i32, height as i32);
             state.gl.ClearColor(0.3, 0.3, 0.5, 1.0);
             state.gl.Enable(gl::DEPTH_TEST);
+            //state.gl.PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
         }
 
         Ok(Triangle {
+            model,
+            shader_program,
             camera: Camera::new(),
         })
     }
@@ -74,14 +76,20 @@ impl Layer for Triangle {
 
         let (width, height) = state.window.size();
 
-        let _projection = glm::perspective(
+        let projection = glm::perspective(
             width as f32 / height as f32,
             self.camera.get_fov(),
             0.1,
-            100.0,
+            1000.0,
         );
 
-        let _view = self.camera.get_view();
+        let view = self.camera.get_view();
+
+        self.shader_program.set_used();
+        self.shader_program.bind_matrix("view", view);
+        self.shader_program.bind_matrix("projection", projection);
+        self.model.render(&state.gl, &self.shader_program);
+
     }
 }
 

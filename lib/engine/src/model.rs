@@ -1,10 +1,8 @@
-use std::path::Path;
+use std::{path::Path, ptr};
 
-use crate::{
-    buffer, gltf,
-    resources::{Error as ResourceError, Resources},
-};
+use crate::{Program, buffer, gltf, resources::{Error as ResourceError, Resources}};
 use anyhow::Result;
+use gl::types::GLenum;
 use gltf::BufferView;
 use nalgebra_glm as glm;
 use slotmap::{DefaultKey, SlotMap};
@@ -37,21 +35,31 @@ pub enum Error {
 
     #[error("Unable to map buffer view to buffer tried to get {get}, max is {max}")]
     BadViewLen { get: usize, max: usize },
+
+    #[error("Mesh does not contain position data")]
+    NoPositions,
 }
 
 #[derive(Debug)]
-pub struct Model<'a> {
+pub struct Model {
     scenes: Vec<Scene>,
 
     buffers: Vec<Buffer>,
 
-    gl_buffers: Vec<buffer::Buffer>,
+    gl_buffers: Vec<GlBuffer>,
+    gl_meshes: Vec<GlMesh>,
 
-    model: &'a gltf::Model,
+    model: gltf::Model,
 }
 
-impl<'a> Model<'a> {
-    pub fn new(gltf: &'a gltf::Model, res: &Resources, folder: &str) -> Result<Self, Error> {
+#[derive(Debug)]
+pub struct GlBuffer {
+    buf: buffer::Buffer,
+    stride: i32,
+}
+
+impl Model {
+    pub fn new(gltf: gltf::Model, res: &Resources, folder: &str) -> Result<Self, Error> {
         let res = res.extend(Path::new(folder));
 
         Ok(Model {
@@ -64,10 +72,12 @@ impl<'a> Model<'a> {
             scenes: gltf
                 .scenes
                 .iter()
-                .map(|scene| Scene::new(scene, gltf))
+                .map(|scene| Scene::new(scene, &gltf))
                 .collect::<Result<_, _>>()?,
+
             model: gltf,
-            gl_buffers: Vec::with_capacity(gltf.buffers.len()),
+            gl_buffers: vec![],
+            gl_meshes: vec![],
         })
     }
 
@@ -76,10 +86,14 @@ impl<'a> Model<'a> {
             self.gl_buffers.push(self.load_view(gl, view)?);
         }
 
+        for mesh in &self.model.meshes {
+            self.gl_meshes.push(GlMesh::load(gl, mesh, &self)?);
+        }
+
         Ok(())
     }
 
-    fn load_view(&self, gl: &gl::Gl, view: &BufferView) -> Result<buffer::Buffer, Error> {
+    fn load_view(&self, gl: &gl::Gl, view: &BufferView) -> Result<GlBuffer, Error> {
         let target = if let Some(t) = view.target {
             t
         } else {
@@ -107,7 +121,138 @@ impl<'a> Model<'a> {
         buf.static_draw_data(data);
         buf.unbind();
 
-        Ok(buf)
+        Ok(GlBuffer {
+            buf,
+            stride: view.byte_stride.unwrap_or_default(),
+        })
+    }
+
+    fn load_accessor(
+        &self,
+        gl: &gl::Gl,
+        accessor: &gltf::Accessor,
+        index: u32,
+    ) -> Result<(), Error> {
+        let max_len = self.gl_buffers.len();
+
+        let buf = self
+            .gl_buffers
+            .get(accessor.buffer_view)
+            .ok_or_else(|| Error::BadIndex {
+                array: "buffer views",
+                got: accessor.buffer_view,
+                max: max_len,
+            })?;
+
+        if buf.buf.buffer_type != gltf::BufferViewTarget::ArrayBuffer as u32 {
+            return Ok(());
+        }
+
+        buf.buf.bind();
+
+        unsafe {
+            gl.VertexAttribPointer(
+                index,
+                accessor.r#type.component_count(),
+                accessor.component_type.get_gl_type(),
+                gl::FALSE,
+                buf.stride,
+                accessor.byte_offset as _,
+            );
+            gl.EnableVertexAttribArray(index);
+        }
+
+        buf.buf.unbind();
+
+        Ok(())
+    }
+
+    pub fn render(&self, gl: &gl::Gl, shader: &Program) {
+        self.scenes[0].render(self, gl, shader);
+    }
+
+}
+
+#[derive(Debug)]
+pub struct GlMesh {
+    prims: Vec<GlPrim>,
+}
+
+impl GlMesh {
+    fn load(gl: &gl::Gl, mesh: &gltf::Mesh, model: &Model) -> Result<Self, Error> {
+        let prims = mesh
+            .primitives
+            .iter()
+            .map(|prim| GlPrim::load(gl, prim, model))
+            .collect::<Result<_, _>>()?;
+
+        Ok(GlMesh { prims })
+    }
+
+    fn render(&self, model: &Model, gl: &gl::Gl) {
+        for prim in &self.prims {
+            prim.render(model, gl);
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct GlPrim {
+    vao: buffer::VertexArray,
+    ebo: Option<usize>,
+    mode: GLenum,
+    count: usize,
+}
+
+impl GlPrim {
+    fn load(gl: &gl::Gl, prim: &gltf::Primitive, model: &Model) -> Result<Self, Error> {
+        let position = prim.attributes.position.ok_or(Error::NoPositions)? as usize;
+
+        let vao = buffer::VertexArray::new(gl);
+        vao.bind();
+
+        let accessor = model
+            .model
+            .accessors
+            .get(position)
+            .ok_or_else(|| Error::BadIndex {
+                array: "accessors",
+                max: model.model.accessors.len(),
+                got: position,
+            })?;
+        model.load_accessor(gl, accessor, 0)?;
+
+        vao.unbind();
+
+        Ok(GlPrim {
+            vao,
+            count: accessor.count,
+            ebo: prim.indices,
+            mode: prim.mode.to_gl_enum(),
+        })
+    }
+
+    fn render(&self, model: &Model, gl: &gl::Gl) {
+        self.vao.bind();
+
+        if let Some(ebo_idx) = self.ebo {
+            let access = &model.model.accessors[ebo_idx];
+            let view_idx = access.buffer_view;
+            let view = &model.model.buffer_views[view_idx];
+            let buffer_idx = view.buffer;
+            let buffer = &model.gl_buffers[buffer_idx];
+            buffer.buf.bind();
+
+            let r#type = access.component_type.get_gl_type();
+
+            unsafe {
+                gl.DrawElements(self.mode, self.count as i32, r#type, ptr::null());
+            }
+        } else {
+            unsafe {
+                gl.DrawArrays(self.mode, 0, self.count as i32);
+            }
+        }
     }
 }
 
@@ -165,6 +310,12 @@ impl Scene {
 
         Ok(Scene { root_nodes, nodes })
     }
+
+    fn render(&self, model: &Model, gl: &gl::Gl, shader: &Program) {
+        for node_id in &self.root_nodes {
+            self.nodes[*node_id].render(model, self, gl, shader);
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -173,6 +324,7 @@ pub struct Node {
     parent: Option<DefaultKey>,
     local_matrix: glm::Mat4,
     global_matrix: glm::Mat4,
+    mesh_id: Option<usize>,
 }
 
 impl Node {
@@ -183,6 +335,7 @@ impl Node {
         nodes: &mut SlotMap<DefaultKey, Node>,
     ) -> Result<DefaultKey, Error> {
         let this_key = nodes.insert(Node::default());
+        nodes[this_key].mesh_id = node.mesh;
         nodes[this_key].parent = parent;
         // process this node
 
@@ -240,5 +393,16 @@ impl Node {
         let scale = glm::scale(&matrix, &glm::Vec3::from(scale));
 
         Ok(translation * rotation * scale)
+    }
+
+    fn render(&self, model: &Model, scene: &Scene, gl: &gl::Gl, shader: &Program) {
+        if let Some(id) = self.mesh_id {
+            shader.bind_matrix("model", self.global_matrix);
+            model.gl_meshes[id].render(model, gl);
+        }
+
+        for child in &self.children {
+            scene.nodes[*child].render(model, scene, gl, shader);
+        }
     }
 }
