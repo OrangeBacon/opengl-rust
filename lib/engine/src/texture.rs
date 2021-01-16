@@ -23,7 +23,28 @@ pub enum Error {
     },
 }
 
+/// OpenGL filtering and wrapping properties
+#[derive(Debug)]
+pub struct Sampler {
+    pub(crate) wrap_s: GLint,
+    pub(crate) wrap_t: GLint,
+    pub(crate) min_filter: GLint,
+    pub(crate) mag_filter: GLint,
+}
+
+impl Default for Sampler {
+    fn default() -> Self {
+        Sampler {
+            wrap_s: gl::REPEAT as _,
+            wrap_t: gl::REPEAT as _,
+            min_filter: gl::NEAREST as _,
+            mag_filter: gl::NEAREST as _,
+        }
+    }
+}
+
 /// A loaded texture, stored on the GPU.  When dropped, the vram is released.
+#[derive(Debug)]
 pub struct Texture {
     gl: gl::Gl,
     id: GLuint,
@@ -42,13 +63,24 @@ impl Texture {
         res: &Resources,
         name: &str,
         index: GLuint,
+        sampler: Sampler,
     ) -> Result<Self, Error> {
         let data = res.load_bytes(name).map_err(|e| Error::ResourceLoad {
             name: name.to_string(),
             inner: e,
         })?;
 
-        let image = image::load_from_memory(&data);
+        Texture::load_from_bytes(gl, index, &data, name, sampler)
+    }
+
+    pub fn load_from_bytes(
+        gl: &gl::Gl,
+        index: GLuint,
+        data: &[u8],
+        name: &str,
+        sampler: Sampler,
+    ) -> Result<Self, Error> {
+        let image = image::load_from_memory(data);
 
         let mut image = image
             .map_err(|e| Error::Decode {
@@ -67,10 +99,10 @@ impl Texture {
             gl.GenTextures(1, &mut texture);
             gl.BindTexture(gl::TEXTURE_2D, texture);
 
-            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as _);
-            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as _);
-            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
-            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, sampler.wrap_s);
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, sampler.wrap_t);
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, sampler.min_filter);
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, sampler.mag_filter);
 
             gl.TexImage2D(
                 gl::TEXTURE_2D,

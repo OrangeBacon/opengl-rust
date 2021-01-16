@@ -703,7 +703,7 @@ pub struct Node {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct Sampler {
@@ -729,47 +729,45 @@ pub struct Sampler {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize_repr)]
+#[derive(Debug, Deserialize_repr, Clone, Copy)]
 #[repr(u32)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SamplerMagFilter {
-    None = 0,
-    Nearest = 9728,
-    Linear = 9729,
+    Nearest = gl::NEAREST,
+    Linear = gl::LINEAR,
 }
 
 impl Default for SamplerMagFilter {
     fn default() -> Self {
-        SamplerMagFilter::None
+        SamplerMagFilter::Nearest
     }
 }
 
-#[derive(Debug, Deserialize_repr)]
+#[derive(Debug, Deserialize_repr, Clone, Copy)]
 #[repr(u32)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SamplerMinFilter {
-    None = 0,
-    Nearest = 9728,
-    Linear = 9729,
-    NearestMipmapNearest = 9984,
-    LinearMipmapNearest = 9985,
-    NearestMipmapLinear = 9986,
-    LinearMipmapLinear = 9987,
+    Nearest = gl::NEAREST,
+    Linear = gl::LINEAR,
+    NearestMipmapNearest = gl::NEAREST_MIPMAP_NEAREST,
+    LinearMipmapNearest = gl::LINEAR_MIPMAP_NEAREST,
+    NearestMipmapLinear = gl::NEAREST_MIPMAP_LINEAR,
+    LinearMipmapLinear = gl::LINEAR_MIPMAP_LINEAR,
 }
 
 impl Default for SamplerMinFilter {
     fn default() -> Self {
-        SamplerMinFilter::None
+        SamplerMinFilter::Nearest
     }
 }
 
-#[derive(Debug, Deserialize_repr)]
+#[derive(Debug, Deserialize_repr, Clone, Copy)]
 #[repr(u32)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SamplerWrap {
-    ClampToEdge = 33071,
-    MirroredRepeat = 33648,
-    Repeat = 10497,
+    ClampToEdge = gl::CLAMP_TO_EDGE,
+    MirroredRepeat = gl::MIRRORED_REPEAT,
+    Repeat = gl::REPEAT,
 }
 
 impl Default for SamplerWrap {

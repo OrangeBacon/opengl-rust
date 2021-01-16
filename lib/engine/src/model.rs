@@ -3,7 +3,7 @@ use std::{path::Path, ptr};
 use crate::{
     buffer, gltf,
     resources::{Error as ResourceError, Resources},
-    DynamicShader, Program,
+    texture, DynamicShader, Program, Texture,
 };
 use anyhow::Result;
 use gl::types::GLenum;
@@ -54,6 +54,22 @@ pub enum Error {
 
     #[error("Shader link error: \n{error}")]
     ShaderLink { error: String },
+
+    #[error("Error loading image {name}: {inner}")]
+    ImageLoad {
+        name: String,
+        #[source]
+        inner: ResourceError,
+    },
+
+    #[error("Error loading texture into vram: {inner}")]
+    Texture {
+        #[source]
+        inner: crate::texture::Error,
+    },
+
+    #[error("No image provided for texture")]
+    NoImage,
 }
 
 pub struct ModelShaders {
@@ -66,9 +82,11 @@ pub struct Model {
     scenes: Vec<Scene>,
 
     buffers: Vec<Buffer>,
+    images: Vec<Vec<u8>>,
 
     gl_buffers: Vec<GlBuffer>,
     gl_meshes: Vec<GlMesh>,
+    gl_textures: Vec<Texture>,
 
     pub(crate) model: gltf::Model,
 }
@@ -96,10 +114,28 @@ impl Model {
                 .map(|scene| Scene::new(scene, &gltf))
                 .collect::<Result<_, _>>()?,
 
+            images: gltf
+                .images
+                .iter()
+                .map(|img| Model::load_image_bytes(img, &res))
+                .collect::<Result<_, _>>()?,
+
             model: gltf,
             gl_buffers: vec![],
             gl_meshes: vec![],
+            gl_textures: vec![],
         })
+    }
+
+    fn load_image_bytes(img: &gltf::Image, res: &Resources) -> Result<Vec<u8>, Error> {
+        let file_name = &img.uri;
+
+        let data = res.load_bytes(file_name).map_err(|e| Error::ImageLoad {
+            name: file_name.to_string(),
+            inner: e,
+        })?;
+
+        Ok(data)
     }
 
     pub fn load_vram(&mut self, gl: &gl::Gl) -> Result<(), Error> {
@@ -109,6 +145,10 @@ impl Model {
 
         for mesh in &self.model.meshes {
             self.gl_meshes.push(GlMesh::load(gl, mesh, &self)?);
+        }
+
+        for (idx, tex) in self.model.textures.iter().enumerate() {
+            self.gl_textures.push(self.load_texture(gl, tex, idx)?);
         }
 
         Ok(())
@@ -146,6 +186,36 @@ impl Model {
             buf,
             stride: view.byte_stride.unwrap_or_default(),
         })
+    }
+
+    fn load_texture(
+        &self,
+        gl: &gl::Gl,
+        tex: &gltf::Texture,
+        tex_idx: usize,
+    ) -> Result<Texture, Error> {
+        let default = gltf::Sampler::default();
+        let sampler = if let Some(idx) = tex.sampler {
+            &self.model.samplers[idx]
+        } else {
+            &default
+        };
+
+        let texture_sampler = texture::Sampler {
+            wrap_s: sampler.wrap_s as _,
+            wrap_t: sampler.wrap_t as _,
+            min_filter: sampler.min_filter as _,
+            mag_filter: sampler.mag_filter as _,
+        };
+
+        let source = tex.source.ok_or(Error::NoImage)?;
+        let data = &self.images[source];
+        let name = &self.model.images[source].uri;
+
+        let tex = Texture::load_from_bytes(gl, tex_idx as u32, data, name, texture_sampler)
+            .map_err(|e| Error::Texture { inner: e })?;
+
+        Ok(tex)
     }
 
     pub(crate) fn load_accessor(
