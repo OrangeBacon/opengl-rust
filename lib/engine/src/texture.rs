@@ -82,16 +82,12 @@ impl Texture {
     ) -> Result<Self, Error> {
         let image = image::load_from_memory(data);
 
-        let mut image = image
+        let image = image
             .map_err(|e| Error::Decode {
                 name: name.to_string(),
                 inner: e,
             })?
             .into_rgb8();
-
-        // OpenGL's coordinate system is inverted on the y-axis, so flip all
-        // images when loading, so they render in the correct orientation
-        image::imageops::flip_vertical_in_place(&mut image);
 
         let mut texture = 0;
         unsafe {

@@ -22,8 +22,17 @@ impl DynamicShader {
             .flatten()
             .collect();
 
-        let vert = DynamicShader::create_vertex(&components, model);
-        let frag = DynamicShader::create_fragment(&components, model);
+        println!("{:?}", prim);
+
+        if let Some(idx) = prim.material {
+            println!("{:?}", model.model.materials[idx]);
+        }
+
+        let vert = DynamicShader::create_vertex(&components, prim, model);
+        let frag = DynamicShader::create_fragment(&components, prim, model);
+
+        println!("{}", vert);
+        println!("{}", frag);
 
         let vert = CString::new(vert).map_err(|_| Error::NullShader)?;
         let frag = CString::new(frag).map_err(|_| Error::NullShader)?;
@@ -75,12 +84,12 @@ impl DynamicShader {
         Ok(accessor.count)
     }
 
-    fn create_vertex(components: &[Attribute], model: &Model) -> String {
+    fn create_vertex(components: &[Attribute], prim: &gltf::Primitive, model: &Model) -> String {
         let mut shader = String::new();
         shader.push_str("#version 330 core\n");
 
         for comp in components {
-            if let Some(layout) = comp.layout(model) {
+            if let Some(layout) = comp.layout(prim, model) {
                 shader.push_str(&format!(
                     "layout (location = {}) in {} {};\n",
                     comp.location,
@@ -92,11 +101,11 @@ impl DynamicShader {
 
         let mut interface_comp = 0;
         for comp in components {
-            if let Some(interface) = comp.interface(model) {
+            if let Some(interface) = comp.interface(prim, model) {
                 if interface_comp == 0 {
                     shader.push_str("out VS_OUT {\n");
                 }
-                shader.push_str(&format!("    {} {};\n", interface, comp.variable(),));
+                shader.push_str(&format!("    {} {};\n", interface, comp.variable()));
 
                 interface_comp += 1;
             }
@@ -107,7 +116,7 @@ impl DynamicShader {
         }
 
         for comp in components {
-            if let Some(uniforms) = comp.uniform() {
+            if let Some(uniforms) = comp.uniform_vert() {
                 for un in uniforms {
                     shader.push_str(&format!("uniform {};\n", un,));
                 }
@@ -117,7 +126,7 @@ impl DynamicShader {
         shader.push_str("void main() {\n");
 
         for comp in components {
-            if let Some(code) = comp.vert() {
+            if let Some(code) = comp.vert(prim, model) {
                 shader.push_str(&code);
             }
         }
@@ -127,13 +136,13 @@ impl DynamicShader {
         shader
     }
 
-    fn create_fragment(components: &[Attribute], model: &Model) -> String {
+    fn create_fragment(components: &[Attribute], prim: &gltf::Primitive, model: &Model) -> String {
         let mut shader = String::new();
         shader.push_str("#version 330 core\n");
 
         let mut interface_comp = 0;
         for comp in components {
-            if let Some(interface) = comp.interface(model) {
+            if let Some(interface) = comp.interface(prim, model) {
                 if interface_comp == 0 {
                     shader.push_str("in VS_OUT {\n");
                 }
@@ -148,12 +157,21 @@ impl DynamicShader {
         }
 
         shader.push_str("out vec4 Color;\n");
+
+        for comp in components {
+            if let Some(uniforms) = comp.uniform_frag(prim, model) {
+                for un in uniforms {
+                    shader.push_str(&format!("uniform {};\n", un,));
+                }
+            }
+        }
+
         shader.push_str("void main() {\n");
         shader.push_str("  Color = ");
 
         let mut output_count = 0;
         for comp in components {
-            if let Some(out) = comp.out(model) {
+            if let Some(out) = comp.out(prim, model) {
                 if output_count != 0 {
                     shader.push_str(" * ");
                 }
@@ -181,7 +199,7 @@ struct Attribute {
 }
 
 impl Attribute {
-    fn layout(&self, model: &Model) -> Option<&'static str> {
+    fn layout(&self, prim: &gltf::Primitive, model: &Model) -> Option<&'static str> {
         match self.kind {
             AttributeType::Position => Some("vec3"),
             AttributeType::Color(_) => {
@@ -189,6 +207,13 @@ impl Attribute {
                     Some("vec3")
                 } else {
                     Some("vec4")
+                }
+            }
+            AttributeType::TexCoord(idx) => {
+                if is_base_color(prim, model, idx) {
+                    Some("vec2")
+                } else {
+                    None
                 }
             }
             _ => None,
@@ -207,7 +232,7 @@ impl Attribute {
         }
     }
 
-    fn interface(&self, model: &Model) -> Option<&'static str> {
+    fn interface(&self, prim: &gltf::Primitive, model: &Model) -> Option<&'static str> {
         match self.kind {
             AttributeType::Color(_) => {
                 if model.model.accessors[self.accessor_idx].r#type == Type::Vec3 {
@@ -216,28 +241,55 @@ impl Attribute {
                     Some("vec4")
                 }
             }
+            AttributeType::TexCoord(idx) => {
+                if is_base_color(prim, model, idx) {
+                    Some("vec2")
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
 
-    fn uniform(&self) -> Option<Vec<&'static str>> {
+    fn uniform_vert(&self) -> Option<Vec<&'static str>> {
         match self.kind {
             AttributeType::Position => Some(vec!["mat4 model", "mat4 view", "mat4 projection"]),
             _ => None,
         }
     }
 
-    fn vert(&self) -> Option<String> {
+    fn uniform_frag(&self, prim: &gltf::Primitive, model: &Model) -> Option<Vec<&'static str>> {
+        match self.kind {
+            AttributeType::TexCoord(idx) => {
+                if is_base_color(prim, model, idx) {
+                    Some(vec!["sampler2D baseColor"])
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn vert(&self, prim: &gltf::Primitive, model: &Model) -> Option<String> {
         match self.kind {
             AttributeType::Position => Some(
                 "    gl_Position = projection * view * model * vec4(Position, 1.0);\n".to_string(),
             ),
             AttributeType::Color(_) => Some(format!("    OUT.{0} = {0};\n", self.variable())),
+            AttributeType::TexCoord(idx) => {
+                if is_base_color(prim, model, idx) {
+                    Some(format!("    OUT.{0} = {0};\n", self.variable()))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
 
-    fn out(&self, model: &Model) -> Option<String> {
+    fn out(&self, prim: &gltf::Primitive, model: &Model) -> Option<String> {
         match self.kind {
             AttributeType::Color(_) => {
                 if model.model.accessors[self.accessor_idx].r#type == Type::Vec3 {
@@ -246,8 +298,36 @@ impl Attribute {
                     Some(format!("IN.{}", self.variable()))
                 }
             }
+            AttributeType::TexCoord(idx) => {
+                if is_base_color(prim, model, idx) {
+                    Some(format!("texture(baseColor, IN.TexCoord{})", idx))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
+    }
+}
+
+fn is_base_color(prim: &gltf::Primitive, model: &Model, idx: usize) -> bool {
+    if let Some(mat) = prim.material {
+        let mat = &model.model.materials[mat];
+        if let Some(pbr) = &mat.pbr_metallic_roughness {
+            if let Some(color) = &pbr.base_color_texture {
+                if color.tex_coord == idx {
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        false
     }
 }
 

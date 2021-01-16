@@ -6,7 +6,7 @@ use crate::{
     texture, DynamicShader, Program, Texture,
 };
 use anyhow::Result;
-use gl::types::GLenum;
+use gl::types::{GLenum, GLsizei};
 use gltf::BufferView;
 use nalgebra_glm as glm;
 use slotmap::{DefaultKey, SlotMap};
@@ -300,6 +300,7 @@ pub struct GlPrim {
     mode: GLenum,
     count: usize,
     shader: Program,
+    base_color: Option<usize>,
 }
 
 impl GlPrim {
@@ -313,9 +314,25 @@ impl GlPrim {
 
         vao.unbind();
 
+        let base_color = if let Some(mat) = prim.material {
+            let mat = &model.model.materials[mat];
+            if let Some(pbr) = &mat.pbr_metallic_roughness {
+                if let Some(color) = &pbr.base_color_texture {
+                    Some(color.index)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         Ok(GlPrim {
             vao,
             count,
+            base_color,
             ebo: prim.indices,
             mode: prim.mode.to_gl_enum(),
             shader,
@@ -334,6 +351,12 @@ impl GlPrim {
         self.shader.bind_matrix("view", *view);
         self.shader.bind_matrix("projection", *proj);
         self.shader.bind_matrix("model", *model_mat);
+
+        if let Some(idx) = self.base_color {
+            let tex = &model.gl_textures[idx];
+            self.shader.bind_texture("baseColor", tex);
+        }
+
         self.vao.bind();
 
         if let Some(ebo_idx) = self.ebo {
@@ -347,13 +370,17 @@ impl GlPrim {
             let r#type = access.component_type.get_gl_type();
 
             unsafe {
-                gl.DrawElements(self.mode, self.count as i32, r#type, ptr::null());
+                gl.DrawElements(self.mode, access.count as GLsizei - 1, r#type, access.byte_offset as _);
             }
+
+            buffer.buf.unbind();
         } else {
             unsafe {
                 gl.DrawArrays(self.mode, 0, self.count as i32);
             }
         }
+
+        self.vao.unbind();
     }
 }
 

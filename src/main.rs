@@ -81,7 +81,7 @@ impl Layer for Triangle {
             width as f32 / height as f32,
             self.camera.get_fov(),
             0.1,
-            1000.0,
+            10000.0,
         );
 
         let view = self.camera.get_view();
