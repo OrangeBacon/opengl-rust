@@ -29,6 +29,7 @@ pub enum Error {
     LinkError { name: String, message: String },
 }
 
+#[derive(Debug)]
 pub struct Program {
     gl: gl::Gl,
     id: GLuint,

@@ -1,6 +1,10 @@
 use std::{path::Path, ptr};
 
-use crate::{Program, buffer, gltf, resources::{Error as ResourceError, Resources}};
+use crate::{
+    buffer, gltf,
+    resources::{Error as ResourceError, Resources},
+    DynamicShader, Program,
+};
 use anyhow::Result;
 use gl::types::GLenum;
 use gltf::BufferView;
@@ -38,6 +42,23 @@ pub enum Error {
 
     #[error("Mesh does not contain position data")]
     NoPositions,
+
+    #[error("Bad vertex attribute lengths")]
+    AttribLen,
+
+    #[error("Generated shader contains nul byte")]
+    NullShader,
+
+    #[error("Shader Compilation error: \n{error}")]
+    ShaderCompile { error: String },
+
+    #[error("Shader link error: \n{error}")]
+    ShaderLink { error: String },
+}
+
+pub struct ModelShaders {
+    pub plain: Program,
+    pub color: Program,
 }
 
 #[derive(Debug)]
@@ -49,7 +70,7 @@ pub struct Model {
     gl_buffers: Vec<GlBuffer>,
     gl_meshes: Vec<GlMesh>,
 
-    model: gltf::Model,
+    pub(crate) model: gltf::Model,
 }
 
 #[derive(Debug)]
@@ -127,7 +148,7 @@ impl Model {
         })
     }
 
-    fn load_accessor(
+    pub(crate) fn load_accessor(
         &self,
         gl: &gl::Gl,
         accessor: &gltf::Accessor,
@@ -167,10 +188,9 @@ impl Model {
         Ok(())
     }
 
-    pub fn render(&self, gl: &gl::Gl, shader: &Program) {
-        self.scenes[0].render(self, gl, shader);
+    pub fn render(&self, gl: &gl::Gl, proj: &glm::Mat4, view: &glm::Mat4) {
+        self.scenes[0].render(self, gl, proj, view);
     }
-
 }
 
 #[derive(Debug)]
@@ -189,9 +209,16 @@ impl GlMesh {
         Ok(GlMesh { prims })
     }
 
-    fn render(&self, model: &Model, gl: &gl::Gl) {
+    fn render(
+        &self,
+        model: &Model,
+        gl: &gl::Gl,
+        model_mat: &glm::Mat4,
+        proj: &glm::Mat4,
+        view: &glm::Mat4,
+    ) {
         for prim in &self.prims {
-            prim.render(model, gl);
+            prim.render(model, gl, model_mat, proj, view);
         }
     }
 }
@@ -202,37 +229,41 @@ pub struct GlPrim {
     ebo: Option<usize>,
     mode: GLenum,
     count: usize,
+    shader: Program,
 }
 
 impl GlPrim {
     fn load(gl: &gl::Gl, prim: &gltf::Primitive, model: &Model) -> Result<Self, Error> {
-        let position = prim.attributes.position.ok_or(Error::NoPositions)? as usize;
-
         let vao = buffer::VertexArray::new(gl);
+
         vao.bind();
 
-        let accessor = model
-            .model
-            .accessors
-            .get(position)
-            .ok_or_else(|| Error::BadIndex {
-                array: "accessors",
-                max: model.model.accessors.len(),
-                got: position,
-            })?;
-        model.load_accessor(gl, accessor, 0)?;
+        let count = DynamicShader::set_attribs(gl, prim, model)?;
+        let shader = DynamicShader::new(gl, prim, model)?;
 
         vao.unbind();
 
         Ok(GlPrim {
             vao,
-            count: accessor.count,
+            count,
             ebo: prim.indices,
             mode: prim.mode.to_gl_enum(),
+            shader,
         })
     }
 
-    fn render(&self, model: &Model, gl: &gl::Gl) {
+    fn render(
+        &self,
+        model: &Model,
+        gl: &gl::Gl,
+        model_mat: &glm::Mat4,
+        proj: &glm::Mat4,
+        view: &glm::Mat4,
+    ) {
+        self.shader.set_used();
+        self.shader.bind_matrix("view", *view);
+        self.shader.bind_matrix("projection", *proj);
+        self.shader.bind_matrix("model", *model_mat);
         self.vao.bind();
 
         if let Some(ebo_idx) = self.ebo {
@@ -311,9 +342,9 @@ impl Scene {
         Ok(Scene { root_nodes, nodes })
     }
 
-    fn render(&self, model: &Model, gl: &gl::Gl, shader: &Program) {
+    fn render(&self, model: &Model, gl: &gl::Gl, proj: &glm::Mat4, view: &glm::Mat4) {
         for node_id in &self.root_nodes {
-            self.nodes[*node_id].render(model, self, gl, shader);
+            self.nodes[*node_id].render(model, self, gl, proj, view);
         }
     }
 }
@@ -395,14 +426,20 @@ impl Node {
         Ok(translation * rotation * scale)
     }
 
-    fn render(&self, model: &Model, scene: &Scene, gl: &gl::Gl, shader: &Program) {
+    fn render(
+        &self,
+        model: &Model,
+        scene: &Scene,
+        gl: &gl::Gl,
+        proj: &glm::Mat4,
+        view: &glm::Mat4,
+    ) {
         if let Some(id) = self.mesh_id {
-            shader.bind_matrix("model", self.global_matrix);
-            model.gl_meshes[id].render(model, gl);
+            model.gl_meshes[id].render(model, gl, &self.global_matrix, proj, view);
         }
 
         for child in &self.children {
-            scene.nodes[*child].render(model, scene, gl, shader);
+            scene.nodes[*child].render(model, scene, gl, proj, view);
         }
     }
 }

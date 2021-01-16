@@ -1,5 +1,10 @@
 use anyhow::Result;
-use engine::{Camera, EngineState, EventResult, Layer, MainLoop, Model, Program, data, gl, glm, gltf, resources::Resources, sdl2::{self, keyboard::Scancode}};
+use engine::{
+    data, gl, glm, gltf,
+    resources::Resources,
+    sdl2::{self, keyboard::Scancode},
+    Camera, EngineState, EventResult, Layer, MainLoop, Model,
+};
 use gl_derive::VertexAttribPointers;
 use std::path::Path;
 
@@ -14,7 +19,6 @@ struct Vertex {
 }
 
 struct Triangle {
-    shader_program: Program,
     camera: Camera,
     model: Model,
 }
@@ -27,8 +31,6 @@ impl Layer for Triangle {
         let mut model = Model::new(model, &res, "sea_keep_lonely_watcher")?;
         model.load_vram(&state.gl)?;
 
-        let shader_program = Program::from_res(&state.gl, &res, "shaders/triangle")?;
-
         let (width, height) = state.window.size();
 
         unsafe {
@@ -40,7 +42,6 @@ impl Layer for Triangle {
 
         Ok(Triangle {
             model,
-            shader_program,
             camera: Camera::new(),
         })
     }
@@ -85,11 +86,7 @@ impl Layer for Triangle {
 
         let view = self.camera.get_view();
 
-        self.shader_program.set_used();
-        self.shader_program.bind_matrix("view", view);
-        self.shader_program.bind_matrix("projection", projection);
-        self.model.render(&state.gl, &self.shader_program);
-
+        self.model.render(&state.gl, &projection, &view);
     }
 }
 

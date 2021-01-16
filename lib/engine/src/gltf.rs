@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use gl::types::GLenum;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
 use serde_repr::Deserialize_repr;
@@ -96,7 +97,7 @@ impl ComponentType {
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Type {
     Scalar,
@@ -582,7 +583,7 @@ pub struct TextureOcculusion {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Mesh {
     pub primitives: Vec<Primitive>,
@@ -600,10 +601,10 @@ pub struct Mesh {
     pub extras: Value,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Primitive {
-    pub attributes: PrimitiveAttr,
+    pub attributes: IndexMap<String, i32>,
 
     pub indices: Option<usize>,
 
@@ -620,24 +621,6 @@ pub struct Primitive {
 
     #[serde(default)]
     pub extras: Value,
-}
-
-#[derive(Debug, Deserialize, Default, Clone)]
-#[serde(rename_all = "UPPERCASE")]
-#[serde(deny_unknown_fields)]
-pub struct PrimitiveAttr {
-    pub position: Option<i32>,
-    pub normal: Option<i32>,
-    pub tangent: Option<i32>,
-    pub texcoord_0: Option<i32>,
-    pub texcoord_1: Option<i32>,
-    pub texcoord_2: Option<i32>,
-    pub color_0: Option<i32>,
-    pub joints_0: Option<i32>,
-    pub weights_0: Option<i32>,
-
-    #[serde(flatten)]
-    pub extra: HashMap<String, Value>,
 }
 
 #[derive(Debug, Deserialize_repr, Clone)]
