@@ -139,6 +139,9 @@ pub struct EngineState {
     /// Primary OpenGL context, used when rendering to the main window.
     pub gl: gl::Gl,
 
+    /// The currently initialised sdl context
+    pub sdl: sdl2::Sdl,
+
     /// The state of all keyboard and mouse inputs
     pub inputs: InputState,
 
@@ -252,6 +255,7 @@ impl MainLoop {
             _ctx: ctx,
             state: EngineState {
                 gl,
+                sdl,
                 window,
                 video,
                 inputs,

@@ -370,7 +370,7 @@ impl GlPrim {
             let r#type = access.component_type.get_gl_type();
 
             unsafe {
-                gl.DrawElements(self.mode, access.count as GLsizei - 1, r#type, access.byte_offset as _);
+                gl.DrawElements(self.mode, access.count as GLsizei, r#type, access.byte_offset as _);
             }
 
             buffer.buf.unbind();

@@ -50,10 +50,22 @@ impl Layer for Triangle {
         use sdl2::event::{Event, WindowEvent};
         match event {
             Event::Window { win_event, .. } => {
-                if let WindowEvent::Resized(w, h) = win_event {
-                    unsafe {
-                        state.gl.Viewport(0, 0, *w, *h);
-                    }
+                match win_event {
+                    WindowEvent::Resized(w, h) => {
+                        unsafe {
+                            state.gl.Viewport(0, 0, *w, *h);
+                        }
+                    },
+
+                    // fix issue with mouse movement being limited if the window loses
+                    // and regains focus
+                    WindowEvent::FocusGained => {
+                        state.sdl.mouse().capture(true);
+                    },
+                    WindowEvent::FocusLost => {
+                        state.sdl.mouse().capture(false);
+                    },
+                    _ => (),
                 }
                 EventResult::Handled
             }
