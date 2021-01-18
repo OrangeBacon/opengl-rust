@@ -1,10 +1,9 @@
 use anyhow::Result;
-use gl::types::*;
 use sdl2::{
     keyboard::Scancode,
     mouse::{MouseButton, MouseState, MouseWheelDirection},
 };
-use std::{cell::RefCell, collections::HashMap, ptr, rc::Rc, time::Instant};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Instant};
 use thiserror::Error;
 
 use crate::EventResult;
@@ -388,7 +387,7 @@ fn enable_gl_debugging(gl: &gl::Gl) {
         gl.Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
 
         // set the debug call back, with no context pointer
-        gl.DebugMessageCallback(Some(gl_debug_log), ptr::null());
+        gl.DebugMessageCallback(Some(gl_debug_log), std::ptr::null());
 
         // tell the driver that we want all possible debug messages
         gl.DebugMessageControl(
@@ -396,7 +395,7 @@ fn enable_gl_debugging(gl: &gl::Gl) {
             gl::DONT_CARE,
             gl::DONT_CARE,
             0,
-            ptr::null(),
+            std::ptr::null(),
             gl::TRUE,
         );
     }
@@ -405,13 +404,13 @@ fn enable_gl_debugging(gl: &gl::Gl) {
 /// Debugging callback
 #[cfg(debug_assertions)]
 extern "system" fn gl_debug_log(
-    source: GLenum,
-    gltype: GLenum,
-    id: GLuint,
-    severity: GLenum,
-    _length: GLsizei,
-    message: *const GLchar,
-    _user_param: *mut GLvoid,
+    source: gl::types::GLenum,
+    gltype: gl::types::GLenum,
+    id: gl::types::GLuint,
+    severity: gl::types::GLenum,
+    _length: gl::types::GLsizei,
+    message: *const gl::types::GLchar,
+    _user_param: *mut gl::types::GLvoid,
 ) {
     // id of trivial, non error/warning information messages
     // not worth printing, would obscure actual errors

@@ -27,7 +27,7 @@ impl Layer for Triangle {
     fn new(state: &EngineState) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
 
-        let model = gltf::Model::from_res(&state.gl, &res, "sea_keep_lonely_watcher/scene.gltf")?;
+        let model = gltf::Model::from_res(&res, "sea_keep_lonely_watcher/scene.gltf")?;
         let mut model = Model::new(model, &res, "sea_keep_lonely_watcher")?;
         model.load_vram(&state.gl)?;
 

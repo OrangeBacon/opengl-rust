@@ -22,17 +22,8 @@ impl DynamicShader {
             .flatten()
             .collect();
 
-        println!("{:?}", prim);
-
-        if let Some(idx) = prim.material {
-            println!("{:?}", model.model.materials[idx]);
-        }
-
         let vert = DynamicShader::create_vertex(&components, prim, model);
         let frag = DynamicShader::create_fragment(&components, prim, model);
-
-        println!("{}", vert);
-        println!("{}", frag);
 
         let vert = CString::new(vert).map_err(|_| Error::NullShader)?;
         let frag = CString::new(frag).map_err(|_| Error::NullShader)?;

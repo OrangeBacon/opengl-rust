@@ -847,7 +847,7 @@ pub struct TextureInfo {
 }
 
 impl Model {
-    pub fn from_res(_gl: &gl::Gl, res: &Resources, name: &str) -> Result<Self, Error> {
+    pub fn from_res(res: &Resources, name: &str) -> Result<Self, Error> {
         let file = res.load_string(name).map_err(|e| Error::Resource {
             name: name.to_string(),
             inner: e,
