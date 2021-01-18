@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 gl_derive = { path = "lib/gl_derive" }
 engine = { path = "lib/engine" }
+native-dialog = "0.5"
 anyhow = "1.0"
 
 [build-dependencies]
@@ -18,3 +19,9 @@ members = [
     "lib/gl",
     "lib/gl_derive",
 ]
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 2

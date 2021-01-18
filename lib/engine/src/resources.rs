@@ -22,6 +22,12 @@ pub struct Resources {
 }
 
 impl Resources {
+    pub fn new(path: PathBuf) -> Resources {
+        Resources {
+            root_path: path,
+        }
+    }
+
     pub fn from_exe_path(rel_path: &Path) -> Result<Resources, Error> {
         let file_name = std::env::current_exe().map_err(|_| Error::FailedToGetExePath)?;
 
@@ -32,11 +38,8 @@ impl Resources {
         })
     }
 
-    pub fn extend(&self, name: &Path) -> Self {
-        let mut path = self.root_path.clone();
-        path.extend(name);
-
-        Resources { root_path: path }
+    pub fn extend<T: AsRef<Path>>(&self, name: T) -> Self {
+        Resources { root_path: self.root_path.join(name) }
     }
 
     pub fn load_cstring(&self, resource_name: &str) -> Result<ffi::CString, Error> {
@@ -63,7 +66,7 @@ impl Resources {
         Ok(buffer)
     }
 
-    pub fn load_string(&self, resource_name: &str) -> Result<String, Error> {
+    pub fn load_string<T: AsRef<Path>>(&self, resource_name: T) -> Result<String, Error> {
         let file = fs::read_to_string(resource_name_to_path(&self.root_path, resource_name))?;
 
         Ok(file)
@@ -71,12 +74,8 @@ impl Resources {
 }
 
 // normalise path differences between windows and linux
-fn resource_name_to_path(root_dir: &Path, location: &str) -> PathBuf {
-    let mut path: PathBuf = root_dir.into();
+fn resource_name_to_path<T: AsRef<Path>>(root_dir: &Path, location: T) -> PathBuf {
+    let path: PathBuf = root_dir.into();
 
-    for part in location.split('/') {
-        path = path.join(part);
-    }
-
-    path
+    path.join(location)
 }

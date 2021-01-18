@@ -98,8 +98,8 @@ pub struct GlBuffer {
 }
 
 impl Model {
-    pub fn new(gltf: gltf::Model, res: &Resources, folder: &str) -> Result<Self, Error> {
-        let res = res.extend(Path::new(folder));
+    pub fn new<T: AsRef<Path>>(gltf: gltf::Model, res: &Resources, folder: T) -> Result<Self, Error> {
+        let res = res.extend(folder);
 
         Ok(Model {
             buffers: gltf

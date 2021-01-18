@@ -1,12 +1,8 @@
 use anyhow::Result;
-use engine::{
-    data, gl, glm, gltf,
-    resources::Resources,
-    sdl2::{self, keyboard::Scancode},
-    Camera, EngineState, EventResult, Layer, MainLoop, Model,
-};
+use engine::{Camera, EngineState, EventResult, Layer, MainLoop, Model, data, gl, glm, gltf, resources::Resources, sdl2::{self, keyboard::Scancode}};
 use gl_derive::VertexAttribPointers;
-use std::path::Path;
+use std::{ffi::OsStr, path::Path};
+use native_dialog::FileDialog;
 
 #[derive(VertexAttribPointers, Copy, Clone, Debug)]
 #[repr(C, packed)]
@@ -21,6 +17,47 @@ struct Vertex {
 struct Triangle {
     camera: Camera,
     model: Model,
+}
+
+impl Triangle {
+    fn swap_model(&mut self, gl: &gl::Gl) {
+        let result = FileDialog::new()
+            .add_filter("glTF Model", &["gltf"])
+            .show_open_single_file();
+
+        let path = match result {
+            Ok(Some(path)) => path,
+            _ => return,
+        };
+
+        let folder = match path.parent() {
+            Some(p) => p,
+            _ => return,
+        };
+
+        let file = match path.file_name() {
+            Some(n) => n,
+            _ => return,
+        };
+
+        let res = Resources::new(folder.to_path_buf());
+
+        let model = match Triangle::load_model(gl, &res, file) {
+            Ok(model) => model,
+            _ => return,
+        };
+
+        self.model = model;
+    }
+
+    fn load_model(gl: &gl::Gl, res: &Resources, path: &OsStr) -> Result<Model> {
+        let model = gltf::Model::from_res(&res, path)?;
+
+        let mut model = Model::new(model, &res, "./")?;
+        model.load_vram(gl)?;
+
+        Ok(model)
+    }
 }
 
 impl Layer for Triangle {
@@ -74,6 +111,14 @@ impl Layer for Triangle {
                 scancode: Some(Scancode::Escape),
                 ..
             } => EventResult::Exit,
+
+            Event::KeyDown {
+                scancode: Some(Scancode::O),
+                ..
+            } => {
+                self.swap_model(&state.gl);
+                EventResult::Handled
+            }
             _ => EventResult::Ignored,
         }
     }

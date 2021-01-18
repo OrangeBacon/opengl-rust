@@ -5,7 +5,7 @@
 //! For more infomation about the file format parsed in this file see
 //! https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::Path};
 
 use anyhow::Result;
 use gl::types::GLenum;
@@ -847,14 +847,14 @@ pub struct TextureInfo {
 }
 
 impl Model {
-    pub fn from_res(res: &Resources, name: &str) -> Result<Self, Error> {
-        let file = res.load_string(name).map_err(|e| Error::Resource {
-            name: name.to_string(),
+    pub fn from_res<T: AsRef<Path>>(res: &Resources, name: T) -> Result<Self, Error> {
+        let file = res.load_string(&name).map_err(|e| Error::Resource {
+            name: name.as_ref().to_string_lossy().to_string(),
             inner: e,
         })?;
 
         let model: Model = serde_json::from_str(&file).map_err(|e| Error::Parse {
-            name: name.to_string(),
+            name: name.as_ref().to_string_lossy().to_string(),
             inner: e,
         })?;
 
