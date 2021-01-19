@@ -70,6 +70,9 @@ pub enum Error {
 
     #[error("No image provided for texture")]
     NoImage,
+
+    #[error("Could not get internal buffer")]
+    InternalBuffer,
 }
 
 pub struct ModelShaders {
@@ -98,14 +101,16 @@ pub struct GlBuffer {
 }
 
 impl Model {
-    pub fn new<T: AsRef<Path>>(gltf: gltf::Model, res: &Resources, folder: T) -> Result<Self, Error> {
+    pub fn new<T: AsRef<Path>>(mut gltf: gltf::Model, res: &Resources, folder: T) -> Result<Self, Error> {
         let res = res.extend(folder);
+
+        let mut default_buffer = gltf.default_buffer.take();
 
         Ok(Model {
             buffers: gltf
                 .buffers
                 .iter()
-                .map(|buffer| Buffer::new(buffer, &res))
+                .map(|buffer| Buffer::new(buffer, &res, &mut default_buffer))
                 .collect::<Result<_, _>>()?,
 
             scenes: gltf
@@ -390,11 +395,18 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    fn new(buffer: &gltf::Buffer, res: &Resources) -> Result<Self, Error> {
-        let mut bytes = res.load_bytes(&buffer.uri).map_err(|e| Error::BufferLoad {
-            name: buffer.uri.clone(),
-            inner: e,
-        })?;
+    fn new(buffer: &gltf::Buffer, res: &Resources, default: &mut Option<Vec<u8>>) -> Result<Self, Error> {
+
+        let bytes = match buffer.uri {
+            Some(ref uri) => res.load_bytes(&uri).map_err(|e| Error::BufferLoad {
+                name: uri.clone(),
+                inner: e,
+            })?,
+            None => match default.take() {
+                Some(data) => data,
+                None => return Err(Error::InternalBuffer)
+            },
+        };
 
         if bytes.len() < buffer.byte_length {
             return Err(Error::BufferLength {
@@ -402,8 +414,6 @@ impl Buffer {
                 expected: buffer.byte_length,
             });
         }
-
-        bytes.resize(buffer.byte_length, 0);
 
         Ok(Buffer { data: bytes })
     }

@@ -5,7 +5,7 @@
 //! For more infomation about the file format parsed in this file see
 //! https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md
 
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, convert::TryInto, path::Path, string::FromUtf8Error};
 
 use anyhow::Result;
 use gl::types::GLenum;
@@ -32,6 +32,152 @@ pub enum Error {
         #[source]
         inner: serde_json::Error,
     },
+
+    #[error("Invalid utf8:\n {inner}")]
+    UTF8 {
+        #[from]
+        #[source]
+        inner: FromUtf8Error,
+    },
+
+    #[error("GLB file too short")]
+    BinaryTooShort,
+
+    #[error("GLB version wrong: expecting v2")]
+    BinaryVersion,
+
+    #[error("GLB chunk type error")]
+    ChunkError,
+}
+
+impl Model {
+    /// load a gltf model from a file
+    /// res: relative folder to load the model from
+    /// name: name of the gltf scene file
+    /// to load the referenced data call `crate::Model::new(...)`
+    pub fn from_res<T: AsRef<Path>>(res: &Resources, name: T) -> Result<Self, Error> {
+        let file = res.load_bytes(&name).map_err(|e| Error::Resource {
+            name: name.as_ref().to_string_lossy().to_string(),
+            inner: e,
+        })?;
+
+        // binary glb files always begin with "glTF", as this is not valid JSON
+        // that makes it easy to distinguish between the plain text and binary
+        // files, ignoring their file extension
+        if file.starts_with(b"glTF") {
+            return Model::from_binary(file);
+        }
+
+        let file = String::from_utf8(file)?;
+
+        let model: Model = serde_json::from_str(&file).map_err(|e| Error::Parse {
+            name: name.as_ref().to_string_lossy().to_string(),
+            inner: e,
+        })?;
+
+        Ok(model)
+    }
+
+    /// convert a glb file into a model
+    /// data: the binary data content of the file
+    ///
+    /// glb files:
+    /// https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#glb-file-format-specification
+    /// Chunk based file format
+    /// All values are little endian
+    /// Header: uint32 magic, uint32 version, uint32 length
+    /// magic == 0x46546C67 ("glTF"), version == 2,
+    /// length == total length of the file, including the header
+    ///
+    /// Chunk headers and end must be 4 byte aligned
+    /// Chunks: uint32 chunkLength, uint32 chunkType, ubyte[] chunkData
+    /// chunkLength == length of the data in the chunk, ignoring the padding
+    ///
+    /// Chunk 0: type == 0x4E4F534A ("JSON"), JSON text, required
+    ///   uses 0x20 (" ") for padding
+    /// Chunk 1: type == 0x004E4942 ("\0BIN"), Binary data buffer, optional
+    ///   uses 0x00 for padding
+    fn from_binary(mut data: Vec<u8>) -> Result<Self, Error> {
+
+        // file header + chunk 0 header length == 24
+        if data.len() < 24 {
+            return Err(Error::BinaryTooShort)
+        }
+
+        // version of the binary file container
+        let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+        if version != 2 {
+            return Err(Error::BinaryVersion);
+        }
+
+        // total data length
+        let length = u32::from_le_bytes(data[8..12].try_into().unwrap());
+        if length != data.len() as u32 {
+            return Err(Error::BinaryTooShort);
+        }
+
+        // chunk 0 header
+        let chunk_len = u32::from_le_bytes(data[12..16].try_into().unwrap()) as usize;
+        let chunk_type = u32::from_le_bytes(data[16..20].try_into().unwrap());
+
+        // chunk 0 must be JSON type
+        if chunk_type != 0x4E4F534A {
+            return Err(Error::ChunkError);
+        }
+
+        // get all data inside chunk 0
+        let json = data.get(20..(20+chunk_len))
+            .ok_or(Error::BinaryTooShort)?;
+
+        // interpret chunk 0 as a gltf model, same as in the non-binary file
+        let json = String::from_utf8(json.to_vec())?;
+        let mut model: Model = serde_json::from_str(&json).map_err(|e| Error::Parse {
+            name: "GLB file".to_string(),
+            inner: e,
+        })?;
+
+        // due to alignment, the next chunk header is the previous chunk
+        // aligned upwards by four
+        let idx = align_up(20 + chunk_len, 4);
+
+        // try to get the length of the next chunk, if it cannot be got, then
+        // assume that chunk 1 does not exist, so return the already existing
+        // model from chunk 0
+        let chunk_len = if let Some(chunk_len) = data.get(idx..(idx+4)) {
+            u32::from_le_bytes(chunk_len.try_into().unwrap()) as usize
+        } else {
+            return Ok(model);
+        };
+
+        // get chunk 1 type
+        let chunk_type = if let Some(chunk_type) = data.get((idx+4)..(idx+8)) {
+            u32::from_le_bytes(chunk_type.try_into().unwrap()) as usize
+        } else {
+            return Err(Error::BinaryTooShort);
+        };
+
+        // chunk 1 must be of type binary
+        if chunk_type != 0x004E4942 {
+            return Err(Error::ChunkError);
+        }
+
+        // try to get the chunk data
+        data.drain(0..(idx + 8));
+        if data.len() < chunk_len {
+            return Err(Error::BinaryTooShort);
+        }
+
+        // store the data inside the model
+        model.default_buffer = Some(data);
+
+        Ok(model)
+    }
+}
+
+/// increase a value up to the next multiple of the alignment
+fn align_up(val: usize, align: usize) -> usize {
+    let remainder = val % align;
+    if remainder > 0 { val + (align - remainder) } else { val }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -284,7 +430,7 @@ pub struct Asset {
 #[serde(rename_all = "camelCase")]
 pub struct Buffer {
     #[serde(default)]
-    pub uri: String,
+    pub uri: Option<String>,
 
     pub byte_length: usize,
 
@@ -437,6 +583,9 @@ pub struct Model {
 
     #[serde(default)]
     pub extras: Value,
+
+    #[serde(skip)]
+    pub default_buffer: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -844,20 +993,4 @@ pub struct TextureInfo {
 
     #[serde(default)]
     pub extras: Value,
-}
-
-impl Model {
-    pub fn from_res<T: AsRef<Path>>(res: &Resources, name: T) -> Result<Self, Error> {
-        let file = res.load_string(&name).map_err(|e| Error::Resource {
-            name: name.as_ref().to_string_lossy().to_string(),
-            inner: e,
-        })?;
-
-        let model: Model = serde_json::from_str(&file).map_err(|e| Error::Parse {
-            name: name.as_ref().to_string_lossy().to_string(),
-            inner: e,
-        })?;
-
-        Ok(model)
-    }
 }

@@ -418,7 +418,7 @@ extern "system" fn gl_debug_log(
 ) {
     // id of trivial, non error/warning information messages
     // not worth printing, would obscure actual errors
-    if id == 0x20071 {
+    if id == 0x20071 || id == 0x20084 {
         return;
     }
 

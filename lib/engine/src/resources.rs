@@ -57,7 +57,7 @@ impl Resources {
         Ok(unsafe { ffi::CString::from_vec_unchecked(buffer) })
     }
 
-    pub fn load_bytes(&self, resource_name: &str) -> Result<Vec<u8>, Error> {
+    pub fn load_bytes<T: AsRef<Path>>(&self, resource_name: T) -> Result<Vec<u8>, Error> {
         let mut file = fs::File::open(resource_name_to_path(&self.root_path, resource_name))?;
 
         let mut buffer: Vec<u8> = Vec::with_capacity(file.metadata()?.len() as usize + 1);

@@ -22,7 +22,7 @@ struct Triangle {
 impl Triangle {
     fn swap_model(&mut self, gl: &gl::Gl) {
         let result = FileDialog::new()
-            .add_filter("glTF Model", &["gltf"])
+            .add_filter("glTF Model", &["gltf", "glb"])
             .show_open_single_file();
 
         let path = match result {
@@ -44,7 +44,10 @@ impl Triangle {
 
         let model = match Triangle::load_model(gl, &res, file) {
             Ok(model) => model,
-            _ => return,
+            Err(e) => {
+                println!("{}", e);
+                return;
+            }
         };
 
         self.model = model;
@@ -55,6 +58,8 @@ impl Triangle {
 
         let mut model = Model::new(model, &res, "./")?;
         model.load_vram(gl)?;
+
+        println!("{:?}", model);
 
         Ok(model)
     }
