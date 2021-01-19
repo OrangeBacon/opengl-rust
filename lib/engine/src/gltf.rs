@@ -98,10 +98,9 @@ impl Model {
     /// Chunk 1: type == 0x004E4942 ("\0BIN"), Binary data buffer, optional
     ///   uses 0x00 for padding
     fn from_binary(mut data: Vec<u8>) -> Result<Self, Error> {
-
         // file header + chunk 0 header length == 24
         if data.len() < 24 {
-            return Err(Error::BinaryTooShort)
+            return Err(Error::BinaryTooShort);
         }
 
         // version of the binary file container
@@ -126,7 +125,8 @@ impl Model {
         }
 
         // get all data inside chunk 0
-        let json = data.get(20..(20+chunk_len))
+        let json = data
+            .get(20..(20 + chunk_len))
             .ok_or(Error::BinaryTooShort)?;
 
         // interpret chunk 0 as a gltf model, same as in the non-binary file
@@ -143,14 +143,14 @@ impl Model {
         // try to get the length of the next chunk, if it cannot be got, then
         // assume that chunk 1 does not exist, so return the already existing
         // model from chunk 0
-        let chunk_len = if let Some(chunk_len) = data.get(idx..(idx+4)) {
+        let chunk_len = if let Some(chunk_len) = data.get(idx..(idx + 4)) {
             u32::from_le_bytes(chunk_len.try_into().unwrap()) as usize
         } else {
             return Ok(model);
         };
 
         // get chunk 1 type
-        let chunk_type = if let Some(chunk_type) = data.get((idx+4)..(idx+8)) {
+        let chunk_type = if let Some(chunk_type) = data.get((idx + 4)..(idx + 8)) {
             u32::from_le_bytes(chunk_type.try_into().unwrap()) as usize
         } else {
             return Err(Error::BinaryTooShort);
@@ -177,7 +177,11 @@ impl Model {
 /// increase a value up to the next multiple of the alignment
 fn align_up(val: usize, align: usize) -> usize {
     let remainder = val % align;
-    if remainder > 0 { val + (align - remainder) } else { val }
+    if remainder > 0 {
+        val + (align - remainder)
+    } else {
+        val
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -593,13 +597,13 @@ pub struct Model {
 #[serde(rename_all = "camelCase")]
 pub struct Image {
     #[serde(default)]
-    pub uri: String,
+    pub uri: Option<String>,
 
     #[serde(default)]
     pub mime_type: String,
 
     #[serde(default)]
-    pub buffer_view: f64,
+    pub buffer_view: Option<usize>,
 
     #[serde(default)]
     pub name: String,

@@ -73,6 +73,9 @@ pub enum Error {
 
     #[error("Could not get internal buffer")]
     InternalBuffer,
+
+    #[error("No buffer view or uri defined on image")]
+    NoSource,
 }
 
 pub struct ModelShaders {
@@ -94,37 +97,38 @@ pub struct Model {
     pub(crate) model: gltf::Model,
 }
 
-#[derive(Debug)]
-pub struct GlBuffer {
-    buf: buffer::Buffer,
-    stride: i32,
-}
-
 impl Model {
-    pub fn new<T: AsRef<Path>>(mut gltf: gltf::Model, res: &Resources, folder: T) -> Result<Self, Error> {
+    pub fn new<T: AsRef<Path>>(
+        mut gltf: gltf::Model,
+        res: &Resources,
+        folder: T,
+    ) -> Result<Self, Error> {
         let res = res.extend(folder);
 
         let mut default_buffer = gltf.default_buffer.take();
 
+        let buffers = gltf
+            .buffers
+            .iter()
+            .map(|buffer| Buffer::new(buffer, &res, &mut default_buffer))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let images = gltf
+            .images
+            .iter()
+            .map(|img| Model::load_image_bytes(img, &res, &gltf, &buffers))
+            .collect::<Result<_, _>>()?;
+
+        let scenes = gltf
+            .scenes
+            .iter()
+            .map(|scene| Scene::new(scene, &gltf))
+            .collect::<Result<_, _>>()?;
+
         Ok(Model {
-            buffers: gltf
-                .buffers
-                .iter()
-                .map(|buffer| Buffer::new(buffer, &res, &mut default_buffer))
-                .collect::<Result<_, _>>()?,
-
-            scenes: gltf
-                .scenes
-                .iter()
-                .map(|scene| Scene::new(scene, &gltf))
-                .collect::<Result<_, _>>()?,
-
-            images: gltf
-                .images
-                .iter()
-                .map(|img| Model::load_image_bytes(img, &res))
-                .collect::<Result<_, _>>()?,
-
+            buffers,
+            images,
+            scenes,
             model: gltf,
             gl_buffers: vec![],
             gl_meshes: vec![],
@@ -132,20 +136,53 @@ impl Model {
         })
     }
 
-    fn load_image_bytes(img: &gltf::Image, res: &Resources) -> Result<Vec<u8>, Error> {
-        let file_name = &img.uri;
+    fn load_image_bytes(
+        img: &gltf::Image,
+        res: &Resources,
+        gltf: &gltf::Model,
+        buffers: &[Buffer],
+    ) -> Result<Vec<u8>, Error> {
+        let data = match img.uri {
+            Some(ref uri) => res.load_bytes(uri).map_err(|e| Error::ImageLoad {
+                name: uri.to_string(),
+                inner: e,
+            })?,
+            None => {
+                if let Some(buffer_view) = img.buffer_view {
+                    let view = gltf.buffer_views.get(buffer_view).ok_or(Error::BadIndex {
+                        array: "buffer views",
+                        got: buffer_view,
+                        max: gltf.buffer_views.len(),
+                    })?;
 
-        let data = res.load_bytes(file_name).map_err(|e| Error::ImageLoad {
-            name: file_name.to_string(),
-            inner: e,
-        })?;
+                    let buffer = buffers.get(view.buffer).ok_or(Error::BadIndex {
+                        array: "buffers",
+                        got: view.buffer,
+                        max: gltf.buffers.len(),
+                    })?;
+
+                    let data = buffer
+                        .data
+                        .get(view.byte_offset..(view.byte_offset + view.byte_length))
+                        .ok_or(Error::BadIndex {
+                            array: "buffers",
+                            got: view.buffer,
+                            max: gltf.buffers.len(),
+                        })?;
+
+                    data.to_vec()
+                } else {
+                    return Err(Error::NoSource);
+                }
+            }
+        };
 
         Ok(data)
     }
 
     pub fn load_vram(&mut self, gl: &gl::Gl) -> Result<(), Error> {
         for view in &self.model.buffer_views {
-            self.gl_buffers.push(self.load_view(gl, view)?);
+            self.gl_buffers.push(GlBuffer::load_view(self, gl, view)?);
         }
 
         for mesh in &self.model.meshes {
@@ -157,40 +194,6 @@ impl Model {
         }
 
         Ok(())
-    }
-
-    fn load_view(&self, gl: &gl::Gl, view: &BufferView) -> Result<GlBuffer, Error> {
-        let target = if let Some(t) = view.target {
-            t
-        } else {
-            return Err(Error::NoTarget);
-        };
-
-        let buffer = self
-            .buffers
-            .get(view.buffer)
-            .ok_or_else(|| Error::BadIndex {
-                array: "buffers",
-                got: view.buffer,
-                max: self.buffers.len(),
-            })?;
-        let data = buffer
-            .data
-            .get(view.byte_offset..(view.byte_offset + view.byte_length))
-            .ok_or_else(|| Error::BadViewLen {
-                get: view.byte_offset + view.byte_length,
-                max: buffer.data.len(),
-            })?;
-
-        let buf = buffer::Buffer::new(gl, target as u32);
-        buf.bind();
-        buf.static_draw_data(data);
-        buf.unbind();
-
-        Ok(GlBuffer {
-            buf,
-            stride: view.byte_stride.unwrap_or_default(),
-        })
     }
 
     fn load_texture(
@@ -215,7 +218,7 @@ impl Model {
 
         let source = tex.source.ok_or(Error::NoImage)?;
         let data = &self.images[source];
-        let name = &self.model.images[source].uri;
+        let name = &self.model.images[source].uri.as_deref().unwrap_or_default();
 
         let tex = Texture::load_from_bytes(gl, tex_idx as u32, data, name, texture_sampler)
             .map_err(|e| Error::Texture { inner: e })?;
@@ -240,11 +243,13 @@ impl Model {
                 max: max_len,
             })?;
 
-        if buf.buf.buffer_type != gltf::BufferViewTarget::ArrayBuffer as u32 {
-            return Ok(());
+        if let Some(ref buf) = buf.buf {
+            if buf.buffer_type != gltf::BufferViewTarget::ArrayBuffer as u32 {
+                return Ok(());
+            }
         }
 
-        buf.buf.bind();
+        buf.bind();
 
         unsafe {
             gl.VertexAttribPointer(
@@ -258,13 +263,69 @@ impl Model {
             gl.EnableVertexAttribArray(index);
         }
 
-        buf.buf.unbind();
+        buf.unbind();
 
         Ok(())
     }
 
     pub fn render(&self, gl: &gl::Gl, proj: &glm::Mat4, view: &glm::Mat4) {
         self.scenes[0].render(self, gl, proj, view);
+    }
+}
+
+#[derive(Debug)]
+pub struct GlBuffer {
+    buf: Option<buffer::Buffer>,
+    stride: i32,
+    data: Option<Vec<u8>>
+}
+
+impl GlBuffer {
+    fn load_view(model: &Model, gl: &gl::Gl, view: &BufferView) -> Result<Self, Error> {
+        let target = if let Some(t) = view.target {
+            t
+        } else {
+            return Err(Error::NoTarget);
+        };
+
+        let buffer = model
+            .buffers
+            .get(view.buffer)
+            .ok_or_else(|| Error::BadIndex {
+                array: "buffers",
+                got: view.buffer,
+                max: model.buffers.len(),
+            })?;
+        let data = buffer
+            .data
+            .get(view.byte_offset..(view.byte_offset + view.byte_length))
+            .ok_or_else(|| Error::BadViewLen {
+                get: view.byte_offset + view.byte_length,
+                max: buffer.data.len(),
+            })?;
+
+        let buf = buffer::Buffer::new(gl, target as u32);
+        buf.bind();
+        buf.static_draw_data(data);
+        buf.unbind();
+
+        Ok(GlBuffer {
+            buf: Some(buf),
+            stride: view.byte_stride.unwrap_or_default(),
+            data: None,
+        })
+    }
+
+    fn bind(&self) {
+        if let Some(ref buf) = self.buf {
+            buf.bind();
+        }
+    }
+
+    fn unbind(&self) {
+        if let Some(ref buf) = self.buf {
+            buf.unbind();
+        }
     }
 }
 
@@ -370,15 +431,20 @@ impl GlPrim {
             let view = &model.model.buffer_views[view_idx];
             let buffer_idx = view.buffer;
             let buffer = &model.gl_buffers[buffer_idx];
-            buffer.buf.bind();
+            buffer.bind();
 
             let r#type = access.component_type.get_gl_type();
 
             unsafe {
-                gl.DrawElements(self.mode, access.count as GLsizei, r#type, access.byte_offset as _);
+                gl.DrawElements(
+                    self.mode,
+                    access.count as GLsizei,
+                    r#type,
+                    access.byte_offset as _,
+                );
             }
 
-            buffer.buf.unbind();
+            buffer.unbind();
         } else {
             unsafe {
                 gl.DrawArrays(self.mode, 0, self.count as i32);
@@ -395,8 +461,11 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    fn new(buffer: &gltf::Buffer, res: &Resources, default: &mut Option<Vec<u8>>) -> Result<Self, Error> {
-
+    fn new(
+        buffer: &gltf::Buffer,
+        res: &Resources,
+        default: &mut Option<Vec<u8>>,
+    ) -> Result<Self, Error> {
         let bytes = match buffer.uri {
             Some(ref uri) => res.load_bytes(&uri).map_err(|e| Error::BufferLoad {
                 name: uri.clone(),
@@ -404,7 +473,7 @@ impl Buffer {
             })?,
             None => match default.take() {
                 Some(data) => data,
-                None => return Err(Error::InternalBuffer)
+                None => return Err(Error::InternalBuffer),
             },
         };
 

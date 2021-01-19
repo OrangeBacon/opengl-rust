@@ -1,8 +1,13 @@
 use anyhow::Result;
-use engine::{Camera, EngineState, EventResult, Layer, MainLoop, Model, data, gl, glm, gltf, resources::Resources, sdl2::{self, keyboard::Scancode}};
+use engine::{
+    data, gl, glm, gltf,
+    resources::Resources,
+    sdl2::{self, keyboard::Scancode},
+    Camera, EngineState, EventResult, Layer, MainLoop, Model,
+};
 use gl_derive::VertexAttribPointers;
-use std::{ffi::OsStr, path::Path};
 use native_dialog::FileDialog;
+use std::{ffi::OsStr, path::Path};
 
 #[derive(VertexAttribPointers, Copy, Clone, Debug)]
 #[repr(C, packed)]
@@ -93,20 +98,18 @@ impl Layer for Triangle {
         match event {
             Event::Window { win_event, .. } => {
                 match win_event {
-                    WindowEvent::Resized(w, h) => {
-                        unsafe {
-                            state.gl.Viewport(0, 0, *w, *h);
-                        }
+                    WindowEvent::Resized(w, h) => unsafe {
+                        state.gl.Viewport(0, 0, *w, *h);
                     },
 
                     // fix issue with mouse movement being limited if the window loses
                     // and regains focus
                     WindowEvent::FocusGained => {
                         state.sdl.mouse().capture(true);
-                    },
+                    }
                     WindowEvent::FocusLost => {
                         state.sdl.mouse().capture(false);
-                    },
+                    }
                     _ => (),
                 }
                 EventResult::Handled

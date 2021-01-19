@@ -23,9 +23,7 @@ pub struct Resources {
 
 impl Resources {
     pub fn new(path: PathBuf) -> Resources {
-        Resources {
-            root_path: path,
-        }
+        Resources { root_path: path }
     }
 
     pub fn from_exe_path(rel_path: &Path) -> Result<Resources, Error> {
@@ -39,7 +37,9 @@ impl Resources {
     }
 
     pub fn extend<T: AsRef<Path>>(&self, name: T) -> Self {
-        Resources { root_path: self.root_path.join(name) }
+        Resources {
+            root_path: self.root_path.join(name),
+        }
     }
 
     pub fn load_cstring(&self, resource_name: &str) -> Result<ffi::CString, Error> {
