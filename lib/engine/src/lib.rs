@@ -3,6 +3,7 @@ pub mod data;
 pub mod gltf;
 pub mod imgui;
 pub mod resources;
+pub mod window;
 
 mod shader;
 pub use shader::{Error, Program, Shader};
