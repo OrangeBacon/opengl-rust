@@ -1,156 +1,27 @@
 use anyhow::Result;
-use sdl2::{
-    keyboard::Scancode,
-    mouse::{MouseButton, MouseState, MouseWheelDirection},
+use std::{cell::RefCell, rc::Rc, time::Instant};
+
+use crate::{
+    window::{
+        event::Event,
+        input::{InputState, KeyState},
+        window::{Window, WindowConfig},
+    },
+    EventResult,
 };
-use std::{cell::RefCell, collections::HashMap, rc::Rc, time::Instant};
-use thiserror::Error;
-
-use crate::EventResult;
-
-/// Error type used during initialisation of SDL2 - the default bindings only
-/// output `String`, so this type annotates the string with the function that
-/// generated the error string and is used to make the string a proper error
-/// type, `anyhow::Error`
-#[derive(Error, Debug)]
-enum SdlError {
-    #[error("Error while initialising SDL2: {reason}")]
-    Init { reason: String },
-
-    #[error("Error while initialising video subsystem: {reason}")]
-    Video { reason: String },
-
-    #[error("Error while initialising OpenGl Context: {reason}")]
-    GlContext { reason: String },
-
-    #[error("Error while initialising SLD2 event pump: {reason}")]
-    Event { reason: String },
-}
-
-/// Current state of a key
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum KeyState {
-    /// The key is not currently pressed
-    None,
-
-    /// The key was pressed down on this frame
-    Down,
-
-    /// The key is being held down
-    Hold,
-
-    /// The key was released on this frame
-    Up,
-}
-
-/// The state of the user input on the current frame
-pub struct InputState {
-    /// Current mouse horizontal position
-    pub x: i32,
-
-    /// Current mouse vertical position
-    pub y: i32,
-
-    /// How much the mouse moved horizontally this frame
-    pub delta_x: i32,
-
-    /// How much the mouse moved vertically this frame
-    pub delta_y: i32,
-
-    /// The current mouse wheel horizontal location
-    pub wheel_x: i32,
-
-    /// The current mouse wheel vertical location
-    pub wheel_y: i32,
-
-    /// How much the mouse wheel moved horizontally this frame
-    pub wheel_delta_x: i32,
-
-    /// How much the mouse wheel moved vertically this frame
-    pub wheel_delta_y: i32,
-
-    /// The state of the mouse buttons
-    mouse_buttons: HashMap<MouseButton, bool>,
-
-    /// The state of the keyboard
-    keys: HashMap<Scancode, KeyState>,
-
-    pub mouse_state: MouseState,
-}
-
-impl InputState {
-    /// Get the current state of a key
-    pub fn get_key_state(&self, key: Scancode) -> KeyState {
-        *self.keys.get(&key).unwrap_or(&KeyState::None)
-    }
-
-    /// Is a key currently pressed down
-    pub fn is_key_pressed(&self, key: Scancode) -> bool {
-        let key = *self.keys.get(&key).unwrap_or(&KeyState::None);
-        if key == KeyState::Down || key == KeyState::Hold {
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Get the current state of a mouse button
-    pub fn get_mouse_button(&self, button: MouseButton) -> bool {
-        *self.mouse_buttons.get(&button).unwrap_or(&false)
-    }
-
-    /// updates the state for a new frame
-    pub fn update(&mut self, mouse_state: MouseState) {
-        let x = mouse_state.x();
-        let y = mouse_state.y();
-
-        self.delta_x = x - self.x;
-        self.delta_y = y - self.y;
-        self.x = x;
-        self.y = y;
-
-        self.wheel_delta_x = 0;
-        self.wheel_delta_y = 0;
-
-        self.mouse_buttons = mouse_state.mouse_buttons().collect();
-
-        self.keys = self
-            .keys
-            .iter()
-            .map(|(scan, state)| {
-                let new_state = match state {
-                    KeyState::Down => KeyState::Hold,
-                    KeyState::Up => KeyState::None,
-                    a => *a,
-                };
-                (*scan, new_state)
-            })
-            .collect();
-
-        self.mouse_state = mouse_state;
-    }
-}
 
 /// Graphics api state that is available to render layers.
 pub struct EngineState {
-    /// Main window rendered to.
-    pub window: sdl2::video::Window,
-
     /// Primary OpenGL context, used when rendering to the main window.
     pub gl: gl::Gl,
-
-    /// The currently initialised sdl context
-    pub sdl: sdl2::Sdl,
 
     /// The state of all keyboard and mouse inputs
     pub inputs: InputState,
 
-    /// SDL2 video system, used for getting window properties,
-    /// including the OpenGL context loader, clipboard and text input.
-    pub video: sdl2::VideoSubsystem,
-
     /// The total time the program has been running in seconds
     pub run_time: f32,
+
+    pub window: Box<dyn Window>,
 }
 
 /// The main game storage, is used to call the main loop.
@@ -163,15 +34,6 @@ pub struct MainLoop {
 
     /// The current graphics state.
     state: EngineState,
-
-    /// The event system for the main window stored in the engine state.
-    events: sdl2::EventPump,
-
-    /// The current OpenGL context. This struct will likely never be read,
-    /// however if it is dropped, then the context will be deleted, causing all
-    /// rendering operations to fail, therefore it is kept here to extend its
-    /// lifetime to be the same as the rest of the graphics state
-    _ctx: sdl2::video::GLContext,
 }
 
 impl MainLoop {
@@ -179,86 +41,28 @@ impl MainLoop {
     /// Currently there is no way to change the settings used, this should
     /// probably be changed.  This method initialises the graphics and creates
     /// a window that will be shown to the user.
-    pub fn new() -> Result<Self> {
-        // initialise graphics library
-        let sdl = sdl2::init().map_err(|e| SdlError::Init { reason: e })?;
-
-        // enable graphics output
-        let video = sdl.video().map_err(|e| SdlError::Video { reason: e })?;
-
-        // set which OpenGL version is requested (OpenGL core 4.5)
-        let gl_attr = video.gl_attr();
-        gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
-        gl_attr.set_context_version(4, 5);
-
-        // set the context to be in debug mode when the crate is compiled in
-        // debug mode, enables the OpenGL debugging callback
-        #[cfg(debug_assertions)]
-        gl_attr.set_context_flags().debug().set();
-
-        // Configure and create a new window
-        // Todo: make these configuration options (or similar), not hardcoded
-        let window = video
-            .window("Game", 900, 700)
-            .opengl()
-            .resizable()
-            .build()?;
-
-        let mouse = sdl.mouse();
-        mouse.capture(true);
-        mouse.set_relative_mouse_mode(true);
-
-        // Enable OpenGL for the main window
-        let ctx = window
-            .gl_create_context()
-            .map_err(|e| SdlError::GlContext { reason: e })?;
-
-        // Tell OpenGL where to find its functions
-        let gl = gl::Gl::load_with(|s| video.gl_get_proc_address(s) as _);
-
-        // connect debug hooks if in debug mode
-        #[cfg(debug_assertions)]
-        enable_gl_debugging(&gl);
-
-        // Initialise the event pump here, not in the run function so the
-        // mouse state can be returned
-        let events = sdl
-            .event_pump()
-            .map_err(|e| SdlError::Event { reason: e })?;
-
-        // A mouse state is required in initialisation so that the struct
-        // field is initialised, it will likely be overwritten during the
-        // first frame
-        let mouse_state = events.mouse_state();
-
-        let inputs = InputState {
-            x: mouse_state.x(),
-            y: mouse_state.y(),
-
-            delta_x: 0,
-            delta_y: 0,
-
-            wheel_x: 0,
-            wheel_y: 0,
-
-            wheel_delta_x: 0,
-            wheel_delta_y: 0,
-
-            mouse_buttons: HashMap::new(),
-            keys: HashMap::new(),
-            mouse_state: mouse_state,
+    pub fn new<T: Window + 'static>() -> Result<Self> {
+        let config = WindowConfig {
+            debug: true,
+            gl_version: (4, 5),
+            width: 900,
+            height: 700,
+            resizable: true,
+            title: "Game",
         };
 
+        let mut window = T::new(config)?;
+
+        let gl = window.new_gl_context()?;
+
+        enable_gl_debugging(&gl);
+
         Ok(MainLoop {
-            events,
             layers: vec![],
-            _ctx: ctx,
             state: EngineState {
                 gl,
-                sdl,
-                window,
-                video,
-                inputs,
+                window: Box::new(window),
+                inputs: Default::default(),
                 run_time: 0.0,
             },
         })
@@ -267,8 +71,8 @@ impl MainLoop {
     /// Adds a new layer to the renderer. Initialises the layer based upon
     /// the engine state.  Todo: allow layers to be configured based upon
     /// other settings, depending on the layer.
-    pub fn add_layer<T: 'static + crate::Layer>(&mut self) -> Result<()> {
-        let layer = T::new(&self.state)?;
+    pub fn add_layer<L: 'static + crate::Layer>(&mut self) -> Result<()> {
+        let layer = L::new(&self.state)?;
         self.layers.push(Rc::new(RefCell::new(layer)));
 
         Ok(())
@@ -290,11 +94,11 @@ impl MainLoop {
             accumulator += frame_time;
             self.state.run_time += frame_time;
 
-            self.state.inputs.update(self.events.mouse_state());
+            self.state.window.update_mouse(&mut self.state.inputs);
 
-            for event in self.events.poll_iter() {
+            while let Some(event) = self.state.window.event() {
                 for layer in self.layers.iter_mut() {
-                    let res = layer.borrow_mut().handle_event(&self.state, &event);
+                    let res = layer.borrow_mut().handle_event(&mut self.state, &event);
                     match res {
                         EventResult::Handled => break,
                         EventResult::Exit => break 'main,
@@ -319,48 +123,27 @@ impl MainLoop {
             for layer in self.layers.iter_mut() {
                 layer.borrow_mut().render(&self.state);
             }
-            self.state.window.gl_swap_window();
+            self.state.window.swap_window();
         }
 
         Ok(())
     }
 }
 
-fn default_event_handler(state: &mut EngineState, event: &sdl2::event::Event) -> EventResult {
-    use sdl2::event::Event;
+fn default_event_handler(state: &mut EngineState, event: &Event) -> EventResult {
     match event {
         Event::Quit { .. } => return EventResult::Exit,
-        Event::KeyDown {
-            scancode: Some(scan),
-            ..
-        } => {
-            state.inputs.keys.insert(*scan, KeyState::Down);
+        Event::KeyDown { key, .. } => {
+            state.inputs.set_key_state(*key, KeyState::Down);
         }
-        Event::KeyUp {
-            scancode: Some(scan),
-            ..
-        } => {
-            state.inputs.keys.insert(*scan, KeyState::Up);
+        Event::KeyUp { key, .. } => {
+            state.inputs.set_key_state(*key, KeyState::Up);
         }
-        Event::MouseWheel {
-            x, y, direction, ..
-        } => {
-            let x = if *direction == MouseWheelDirection::Flipped {
-                y
-            } else {
-                x
-            };
+        Event::Scroll { x: dx, y: dy, .. } => {
+            state.inputs.set_wheel_delta(*dx, *dy);
 
-            let y = if *direction == MouseWheelDirection::Flipped {
-                x
-            } else {
-                y
-            };
-
-            state.inputs.wheel_delta_x = *x;
-            state.inputs.wheel_delta_y = *y;
-            state.inputs.wheel_x += *x;
-            state.inputs.wheel_y += *y;
+            let (x, y) = state.inputs.wheel_position();
+            state.inputs.set_wheel_position(x + *dx, y + *dy);
         }
         _ => (),
     }

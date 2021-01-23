@@ -1,16 +1,16 @@
 use std::time::Instant;
-
+/*
 use crate::{main_loop::EngineState, EventResult, Layer};
 use anyhow::Result;
 use sdl2::event::Event;
-
+*/
 pub struct ImguiLayer {
     context: imgui::Context,
     imgui_sdl2: imgui_sdl2::ImguiSdl2,
     frame_time: Instant,
     renderer: imgui_opengl_renderer::Renderer,
 }
-
+/*
 impl Layer for ImguiLayer {
     fn new(state: &EngineState) -> Result<Self> {
         let mut context = imgui::Context::create();
@@ -64,3 +64,4 @@ impl Layer for ImguiLayer {
         self.renderer.render(ui);
     }
 }
+*/

@@ -1,4 +1,4 @@
-use crate::main_loop::EngineState;
+use crate::{main_loop::EngineState, window::event::Event};
 use anyhow::Result;
 
 /// The result of a layer processing an event
@@ -23,7 +23,7 @@ pub trait Layer {
         Self: Sized;
 
     /// Process a single input event.
-    fn handle_event(&mut self, state: &EngineState, event: &sdl2::event::Event) -> EventResult {
+    fn handle_event(&mut self, state: &mut EngineState, event: &Event) -> EventResult {
         let _ = state;
         let _ = event;
         EventResult::Ignored

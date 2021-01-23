@@ -2,6 +2,7 @@
 /// Not useful for text input, use the text input event for that.
 /// See https://wiki.libsdl.org/SDL_Keycode
 /// See https://usb.org/sites/default/files/hut1_21.pdf
+#[derive(Copy, Clone, Eq, PartialEq, Hash, PartialOrd, Ord, Debug)]
 pub enum Scancode {
     // Keyboard Letter keys
     A,
@@ -226,6 +227,7 @@ pub enum Scancode {
     VolumeUp,
 
     // Application keys
+    Application,
     App1,
     App2,
     AppBack,
@@ -256,7 +258,7 @@ pub enum Scancode {
     CrSel,
     CurrencySubUnit,
     CurrencyUnit,
-    DecimalSeperator,
+    DecimalSeparator,
     DisplaySwitch,
     Eject,
     ExSel,
@@ -271,11 +273,11 @@ pub enum Scancode {
     Power,
     Prior,
     Select,
-    Seperator,
+    Separator,
     Sleep,
     Stop,
     SysReq,
-    ThousandsSeperator,
+    ThousandsSeparator,
     WorldWideWeb,
     Unknown,
     Pause,

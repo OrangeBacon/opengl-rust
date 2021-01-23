@@ -28,4 +28,3 @@ pub use camera::Camera;
 
 pub use gl;
 pub use nalgebra_glm as glm;
-pub use sdl2;

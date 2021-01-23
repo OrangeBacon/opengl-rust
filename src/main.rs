@@ -2,7 +2,7 @@ use anyhow::Result;
 use engine::{
     data, gl, glm, gltf,
     resources::Resources,
-    sdl2::{self, keyboard::Scancode},
+    window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
     Camera, EngineState, EventResult, Layer, MainLoop, Model,
 };
 use gl_derive::VertexAttribPointers;
@@ -93,36 +93,31 @@ impl Layer for Triangle {
         })
     }
 
-    fn handle_event(&mut self, state: &EngineState, event: &sdl2::event::Event) -> EventResult {
-        use sdl2::event::{Event, WindowEvent};
+    fn handle_event(&mut self, state: &mut EngineState, event: &Event) -> EventResult {
         match event {
-            Event::Window { win_event, .. } => {
-                match win_event {
-                    WindowEvent::Resized(w, h) => unsafe {
-                        state.gl.Viewport(0, 0, *w, *h);
-                    },
+            Event::Resize { width, height, .. } => unsafe {
+                state.gl.Viewport(0, 0, *width as _, *height as _);
+                EventResult::Handled
+            },
 
-                    // fix issue with mouse movement being limited if the window loses
-                    // and regains focus
-                    WindowEvent::FocusGained => {
-                        state.sdl.mouse().capture(true);
-                    }
-                    WindowEvent::FocusLost => {
-                        state.sdl.mouse().capture(false);
-                    }
-                    _ => (),
-                }
+            // fix issue with mouse movement being limited if the window loses
+            // and regains focus
+            Event::FocusGained => {
+                state.window.set_mouse_capture(true);
+                EventResult::Handled
+            }
+            Event::FocusLost => {
+                state.window.set_mouse_capture(false);
                 EventResult::Handled
             }
 
             Event::KeyDown {
-                scancode: Some(Scancode::Escape),
+                key: Scancode::Escape,
                 ..
             } => EventResult::Exit,
 
             Event::KeyDown {
-                scancode: Some(Scancode::O),
-                ..
+                key: Scancode::O, ..
             } => {
                 self.swap_model(&state.gl);
                 EventResult::Handled
@@ -163,7 +158,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut main_loop = MainLoop::new()?;
+    let mut main_loop = MainLoop::new::<SdlWindow>()?;
     main_loop.add_layer::<Triangle>()?;
     //main_loop.add_layer::<engine::imgui::ImguiLayer>()?;
 

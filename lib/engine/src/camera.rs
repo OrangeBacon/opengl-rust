@@ -1,7 +1,7 @@
 use nalgebra_glm as glm;
-use sdl2::keyboard::Scancode;
+use scancode::Scancode;
 
-use crate::EngineState;
+use crate::{window::scancode, EngineState};
 
 /// Simple camera object
 /// uses euler angles, prevents looking up so that it doesn't gimble lock
@@ -95,13 +95,14 @@ impl Camera {
         if state.inputs.is_key_pressed(Scancode::Space) {
             self.pos += camera_speed * self.world_up;
         }
-        if state.inputs.is_key_pressed(Scancode::LShift) {
+        if state.inputs.is_key_pressed(Scancode::LeftShift) {
             self.pos -= camera_speed * self.world_up;
         }
 
         // move the camera based upon mouse movement
-        let x_offset = state.inputs.delta_x as f32 * self.mouse_sensitivity;
-        let y_offset = state.inputs.delta_y as f32 * self.mouse_sensitivity;
+        let (x, y) = state.inputs.mouse_delta();
+        let x_offset = x as f32 * self.mouse_sensitivity;
+        let y_offset = y as f32 * self.mouse_sensitivity;
 
         self.yaw += x_offset;
         self.pitch += y_offset;
@@ -114,7 +115,7 @@ impl Camera {
         }
 
         // change the zoom level depending upon scroll wheel
-        self.zoom += self.zoom_speed * state.inputs.wheel_delta_y as f32;
+        self.zoom += self.zoom_speed * state.inputs.wheel_delta().1 as f32;
         if self.zoom < 1.0 {
             self.zoom = 1.0;
         }
