@@ -31,10 +31,8 @@ pub trait Layer {
 
     /// Physics update function, called with a fixed dt, shouldn't change between
     /// update calls.  Can be called multiple times per render.
-    /// time: time in seconds at the start of the current update
     /// dt: delta time, the period of time for this update in seconds
-    /// The update processes the time from `time` to `time + dt`
-    fn update(&mut self, state: &EngineState, time: f32, dt: f32);
+    fn update(&mut self, state: &EngineState, dt: f32);
 
     /// Run the rendering for this layer
     fn render(&mut self, state: &EngineState);

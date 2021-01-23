@@ -81,7 +81,6 @@ impl MainLoop {
     /// Start the game loop, this function will not return until the main window
     /// is closed, only saving, error reporting, etc should happen afterwards.
     pub fn run(mut self) -> Result<()> {
-        let mut t = 0.0;
         const DT: f32 = 1.0 / 60.0;
         let mut current_time = Instant::now();
         let mut accumulator = 0.0;
@@ -92,7 +91,6 @@ impl MainLoop {
             current_time = new_time;
 
             accumulator += frame_time;
-            self.state.run_time += frame_time;
 
             self.state.window.update_mouse(&mut self.state.inputs);
 
@@ -113,11 +111,11 @@ impl MainLoop {
 
             while accumulator >= DT {
                 for layer in self.layers.iter_mut() {
-                    layer.borrow_mut().update(&self.state, t, DT);
+                    layer.borrow_mut().update(&self.state, DT);
                 }
 
                 accumulator -= DT;
-                t += DT;
+                self.state.run_time += DT;
             }
 
             for layer in self.layers.iter_mut() {

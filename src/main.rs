@@ -126,7 +126,7 @@ impl Layer for Triangle {
         }
     }
 
-    fn update(&mut self, state: &EngineState, _time: f32, dt: f32) {
+    fn update(&mut self, state: &EngineState, dt: f32) {
         self.camera.update(state, dt);
     }
 
