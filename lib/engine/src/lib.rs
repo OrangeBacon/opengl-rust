@@ -19,10 +19,10 @@ mod texture;
 pub use texture::Texture;
 
 mod layer;
-pub use layer::{EventResult, Layer};
+pub use layer::{EventResult, Renderer, Updater};
 
 mod main_loop;
-pub use main_loop::{EngineState, MainLoop};
+pub use main_loop::{EngineState, EngineUpdateState, MainLoop};
 
 mod camera;
 pub use camera::Camera;

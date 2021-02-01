@@ -1,13 +1,15 @@
 use anyhow::Result;
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use mpsc::{Receiver, Sender};
+use std::{marker::PhantomData, sync::mpsc, time::Instant};
 
 use crate::{
+    scene::triple_buffer::{TripleBuffer, TripleBufferReader, TripleBufferWriter},
     window::{
         event::Event,
         input::{InputState, KeyState},
         window::{Window, WindowConfig},
     },
-    EventResult,
+    EventResult, Renderer, Updater,
 };
 
 /// Graphics api state that is available to render layers.
@@ -15,33 +17,44 @@ pub struct EngineState {
     /// Primary OpenGL context, used when rendering to the main window.
     pub gl: gl::Gl,
 
+    pub window: Box<dyn Window>,
+}
+
+pub struct EngineUpdateState {
     /// The state of all keyboard and mouse inputs
     pub inputs: InputState,
 
     /// The total time the program has been running in seconds
     pub run_time: f32,
-
-    pub window: Box<dyn Window>,
 }
 
 /// The main game storage, is used to call the main loop.
-pub struct MainLoop {
-    /// Vector of everything in the render state of the game.
-    /// I couldn't get rust to have a vec of mutable trait objects without
-    /// using `Rc<RefCell<...>>`, in reality these objects should only ever
-    /// have one owner, this vector
-    layers: Vec<Rc<RefCell<dyn crate::Layer>>>,
+pub struct MainLoop<T, R, U>
+where
+    T: Send + Default,
+    R: Renderer<T>,
+    U: Updater<T>,
+{
+    renderer: R,
+    updater: U,
+
+    _state_type: PhantomData<T>,
 
     /// The current graphics state.
     state: EngineState,
 }
 
-impl MainLoop {
+impl<T, R, U> MainLoop<T, R, U>
+where
+    T: Send + Default + 'static,
+    R: Renderer<T> + 'static,
+    U: Updater<T> + Send + 'static,
+{
     /// Try to create a new game engine instance, using default settings
     /// Currently there is no way to change the settings used, this should
     /// probably be changed.  This method initialises the graphics and creates
     /// a window that will be shown to the user.
-    pub fn new<T: Window + 'static>() -> Result<Self> {
+    pub fn new<W: Window + 'static>() -> Result<Self> {
         let config = WindowConfig {
             debug: true,
             gl_version: (4, 5),
@@ -51,84 +64,132 @@ impl MainLoop {
             title: "Game",
         };
 
-        let mut window = T::new(config)?;
+        let mut window = W::new(config)?;
 
         let gl = window.new_gl_context()?;
 
         enable_gl_debugging(&gl);
 
+        let state = EngineState {
+            gl,
+            window: Box::new(window),
+        };
+
+        let renderer = R::new(&state)?;
+        let updater = U::new(&state)?;
+
         Ok(MainLoop {
-            layers: vec![],
-            state: EngineState {
-                gl,
-                window: Box::new(window),
-                inputs: Default::default(),
-                run_time: 0.0,
-            },
+            renderer,
+            updater,
+            state,
+            _state_type: PhantomData::default(),
         })
-    }
-
-    /// Adds a new layer to the renderer. Initialises the layer based upon
-    /// the engine state.  Todo: allow layers to be configured based upon
-    /// other settings, depending on the layer.
-    pub fn add_layer<L: 'static + crate::Layer>(&mut self) -> Result<()> {
-        let layer = L::new(&self.state)?;
-        self.layers.push(Rc::new(RefCell::new(layer)));
-
-        Ok(())
     }
 
     /// Start the game loop, this function will not return until the main window
     /// is closed, only saving, error reporting, etc should happen afterwards.
-    pub fn run(mut self) -> Result<()> {
-        const DT: f32 = 1.0 / 60.0;
-        let mut current_time = Instant::now();
-        let mut accumulator = 0.0;
+    pub fn run(self) -> Result<()> {
+        let (read, write) = TripleBuffer::new();
+        let (event_tx, event_rx) = mpsc::channel();
 
-        'main: loop {
-            let new_time = Instant::now();
-            let frame_time = (new_time - current_time).as_secs_f32();
-            current_time = new_time;
+        let Self {
+            renderer,
+            updater,
+            state,
+            ..
+        } = self;
 
-            accumulator += frame_time;
+        let update = std::thread::spawn(Self::update_loop(updater, write, event_rx));
 
-            self.state.window.update_mouse(&mut self.state.inputs);
+        Self::render_loop(state, renderer, read, event_tx)?;
 
-            while let Some(event) = self.state.window.event() {
-                for layer in self.layers.iter_mut() {
-                    let res = layer.borrow_mut().handle_event(&mut self.state, &event);
-                    match res {
-                        EventResult::Handled => break,
-                        EventResult::Exit => break 'main,
-                        EventResult::Ignored => (),
+        update.join().unwrap()?;
+
+        Ok(())
+    }
+
+    pub fn update_loop(
+        mut updater: U,
+        write: TripleBufferWriter<T>,
+        event_rx: Receiver<Event>,
+    ) -> impl FnMut() -> Result<()> {
+        move || {
+            let mut state = EngineUpdateState {
+                inputs: Default::default(),
+                run_time: 0.0,
+            };
+
+            const DT: f32 = 1.0 / 60.0;
+            let mut current_time = Instant::now();
+            let mut accumulator = 0.0;
+
+            'main: loop {
+                let new_time = Instant::now();
+                let frame_time = (new_time - current_time).as_secs_f32();
+                current_time = new_time;
+
+                accumulator += frame_time;
+
+                let mut write = write.get_write()?;
+                let write = write.state_mut()?;
+
+                while let Ok(event) = event_rx.try_recv() {
+                    updater.handle_event(&mut state, &event);
+                    if default_event_handler(&mut state, &event) == EventResult::Exit {
+                        break 'main;
                     }
                 }
 
-                if default_event_handler(&mut self.state, &event) == EventResult::Exit {
-                    break 'main;
+                while accumulator >= DT {
+                    updater.update(write, DT);
+
+                    accumulator -= DT;
+                    state.run_time += DT;
+                }
+
+                std::thread::sleep(std::time::Duration::from_secs(0));
+            }
+
+            Ok(())
+        }
+    }
+
+    pub fn render_loop(
+        mut graphics: EngineState,
+        mut renderer: R,
+        read: TripleBufferReader<T>,
+        event_tx: Sender<Event>,
+    ) -> Result<()> {
+        loop {
+            let mouse_event = graphics.window.update_mouse();
+            let mouse_event = Event::MouseMove { data: mouse_event };
+            match renderer.handle_event(&graphics, &mouse_event) {
+                EventResult::Handled => (),
+                EventResult::Ignored => event_tx.send(mouse_event)?,
+                EventResult::Exit => break,
+            }
+
+            while let Some(event) = graphics.window.event() {
+                match renderer.handle_event(&graphics, &event) {
+                    EventResult::Handled => (),
+                    EventResult::Ignored => event_tx.send(event)?,
+                    EventResult::Exit => break,
                 }
             }
 
-            while accumulator >= DT {
-                for layer in self.layers.iter_mut() {
-                    layer.borrow_mut().update(&self.state, DT);
-                }
+            let read = read.get_read()?;
+            let read = read.state()?;
 
-                accumulator -= DT;
-                self.state.run_time += DT;
-            }
+            renderer.render(&graphics, read);
 
-            for layer in self.layers.iter_mut() {
-                layer.borrow_mut().render(&self.state);
-            }
-            self.state.window.swap_window();
+            graphics.window.swap_window();
         }
 
         Ok(())
     }
 }
 
-fn default_event_handler(state: &mut EngineState, event: &Event) -> EventResult {
+fn default_event_handler(state: &mut EngineUpdateState, event: &Event) -> EventResult {
     match event {
         Event::Quit { .. } => return EventResult::Exit,
         Event::KeyDown { key, .. } => {
@@ -138,10 +199,10 @@ fn default_event_handler(state: &mut EngineState, event: &Event) -> EventResult 
             state.inputs.set_key_state(*key, KeyState::Up);
         }
         Event::Scroll { x: dx, y: dy, .. } => {
-            state.inputs.set_wheel_delta(*dx, *dy);
+            state.inputs.mouse().set_wheel_delta(*dx, *dy);
 
-            let (x, y) = state.inputs.wheel_position();
-            state.inputs.set_wheel_position(x + *dx, y + *dy);
+            let (x, y) = state.inputs.mouse().wheel_position();
+            state.inputs.mouse().set_wheel_position(x + *dx, y + *dy);
         }
         _ => (),
     }

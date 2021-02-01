@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use super::{
     event::Event,
-    input::InputState,
+    input::MouseState,
     scancode::Scancode,
     window::{Window, WindowConfig},
 };
@@ -47,6 +47,9 @@ pub struct SdlWindow {
 
     /// The global sdl event pump, is valid for all windows
     event_pump: sdl2::EventPump,
+
+    old_x: i32,
+    old_y: i32,
 }
 
 impl Window for SdlWindow {
@@ -88,6 +91,8 @@ impl Window for SdlWindow {
             window,
             event_pump,
             gl_contexts: Vec::with_capacity(1),
+            old_x: i32::MIN,
+            old_y: i32::MIN,
         })
     }
 
@@ -133,15 +138,18 @@ impl Window for SdlWindow {
         None
     }
 
-    fn update_mouse(&mut self, state: &mut InputState) {
+    fn update_mouse(&mut self) -> MouseState {
+        let mut state = MouseState::default();
+
         // get the current mouse state
         let mouse = self.event_pump.mouse_state();
-        let (old_x, old_y) = state.mouse_position();
         let (x, y) = (mouse.x(), mouse.y());
 
         // update the existing state with the new values
         state.set_mouse_position(x, y);
-        state.set_mouse_delta(x - old_x, y - old_y);
+        if self.old_x == i32::MIN {
+            state.set_mouse_delta(x - self.old_x, y - self.old_y);
+        }
         state.set_mouse_left(mouse.left());
         state.set_mouse_middle(mouse.middle());
         state.set_mouse_right(mouse.right());
@@ -152,6 +160,11 @@ impl Window for SdlWindow {
         // scroll event to update it, so assume zero delta incase the scroll
         // event doesn't come.
         state.set_wheel_delta(0, 0);
+
+        self.old_x = x;
+        self.old_y = y;
+
+        state
     }
 
     fn swap_window(&mut self) {

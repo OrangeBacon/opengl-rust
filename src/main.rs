@@ -3,7 +3,7 @@ use engine::{
     data, gl, glm, gltf,
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
-    Camera, EngineState, EventResult, Layer, MainLoop, Model,
+    Camera, EngineState, EngineUpdateState, EventResult, MainLoop, Model, Renderer, Updater,
 };
 use gl_derive::VertexAttribPointers;
 use native_dialog::FileDialog;
@@ -23,6 +23,9 @@ struct Triangle {
     camera: Camera,
     model: Model,
 }
+
+#[derive(Default)]
+struct TriangleRender {}
 
 impl Triangle {
     fn swap_model(&mut self, gl: &gl::Gl) {
@@ -70,7 +73,7 @@ impl Triangle {
     }
 }
 
-impl Layer for Triangle {
+impl Updater<TriangleRender> for Triangle {
     fn new(state: &EngineState) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
 
@@ -93,44 +96,22 @@ impl Layer for Triangle {
         })
     }
 
-    fn handle_event(&mut self, state: &mut EngineState, event: &Event) -> EventResult {
-        match event {
-            Event::Resize { width, height, .. } => unsafe {
-                state.gl.Viewport(0, 0, *width as _, *height as _);
-                EventResult::Handled
-            },
+    fn handle_event(&mut self, state: &mut EngineUpdateState, event: &Event) -> EventResult {}
 
-            // fix issue with mouse movement being limited if the window loses
-            // and regains focus
-            Event::FocusGained => {
-                state.window.set_mouse_capture(true);
-                EventResult::Handled
-            }
-            Event::FocusLost => {
-                state.window.set_mouse_capture(false);
-                EventResult::Handled
-            }
-
-            Event::KeyDown {
-                key: Scancode::Escape,
-                ..
-            } => EventResult::Exit,
-
-            Event::KeyDown {
-                key: Scancode::O, ..
-            } => {
-                self.swap_model(&state.gl);
-                EventResult::Handled
-            }
-            _ => EventResult::Ignored,
-        }
-    }
-
-    fn update(&mut self, state: &EngineState, dt: f32) {
+    fn update(&mut self, state: &TriangleRender, dt: f32) {
         self.camera.update(state, dt);
     }
+}
 
-    fn render(&mut self, state: &EngineState) {
+impl Renderer<TriangleRender> for TriangleRender {
+    fn new(state: &EngineState) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+
+    fn render(&mut self, state: &EngineState, data: &TriangleRender) {
         unsafe {
             state.gl.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
         }
@@ -148,6 +129,33 @@ impl Layer for Triangle {
 
         self.model.render(&state.gl, &projection, &view);
     }
+
+    fn handle_event(&mut self, graphics: &EngineState, event: &Event) -> EventResult {
+        match event {
+            Event::Resize { width, height, .. } => unsafe {
+                graphics.gl.Viewport(0, 0, *width as _, *height as _);
+                EventResult::Handled
+            },
+
+            // fix issue with mouse movement being limited if the window loses
+            // and regains focus
+            Event::FocusGained => {
+                graphics.window.set_mouse_capture(true);
+                EventResult::Handled
+            }
+            Event::FocusLost => {
+                graphics.window.set_mouse_capture(false);
+                EventResult::Handled
+            }
+
+            Event::KeyDown {
+                key: Scancode::Escape,
+                ..
+            } => EventResult::Exit,
+
+            _ => EventResult::Ignored,
+        }
+    }
 }
 
 fn main() {
@@ -158,9 +166,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut main_loop = MainLoop::new::<SdlWindow>()?;
-    main_loop.add_layer::<Triangle>()?;
-    //main_loop.add_layer::<engine::imgui::ImguiLayer>()?;
+    let mut main_loop = MainLoop::<_, TriangleRender, Triangle>::new::<SdlWindow>()?;
 
     main_loop.run()?;
 

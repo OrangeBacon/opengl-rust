@@ -61,6 +61,106 @@ pub struct MouseState {
     mouse_five: bool,
 }
 
+impl MouseState {
+    /// Get the current (x, y) position of the mouse
+    pub fn mouse_position(&self) -> (i32, i32) {
+        (self.x, self.y)
+    }
+
+    /// Set the current mouse position this frame
+    pub(crate) fn set_mouse_position(&mut self, x: i32, y: i32) {
+        self.x = x;
+        self.y = y;
+    }
+
+    /// Get the amount the mouse moved in the current frame
+    pub fn mouse_delta(&self) -> (i32, i32) {
+        (self.delta_x, self.delta_y)
+    }
+
+    /// Set the amount the mouse moved in the current frame
+    pub(crate) fn set_mouse_delta(&mut self, x: i32, y: i32) {
+        self.delta_x = x;
+        self.delta_y = y;
+    }
+
+    /// Get the cumulative scroll position of the mouse wheel
+    /// result = (horizontal, vertical), horizontal scroll might not be possible
+    /// depending upon the mouse
+    pub fn wheel_position(&self) -> (i32, i32) {
+        (self.wheel_x, self.wheel_y)
+    }
+
+    /// Set the current mouse scroll position
+    pub(crate) fn set_wheel_position(&mut self, x: i32, y: i32) {
+        self.wheel_x = x;
+        self.wheel_y = y;
+    }
+
+    /// Get how much the mouse wheel has moved in the current frame
+    /// result = (horizontal, vertical)
+    pub fn wheel_delta(&self) -> (i32, i32) {
+        (self.wheel_delta_x, self.wheel_delta_y)
+    }
+
+    /// Set the current frames's scroll wheel change.  This does not
+    /// update the scroll wheel position, just the delta.
+    pub(crate) fn set_wheel_delta(&mut self, x: i32, y: i32) {
+        self.wheel_delta_x = x;
+        self.wheel_delta_y = y;
+    }
+
+    /// Is the left mouse button pressed
+    pub fn mouse_left(&self) -> bool {
+        self.left_button
+    }
+
+    /// Set if the left mouse button is pressed
+    pub(crate) fn set_mouse_left(&mut self, value: bool) {
+        self.left_button = value;
+    }
+
+    /// Is the middle mouse button pressed
+    pub fn mouse_middle(&self) -> bool {
+        self.middle_button
+    }
+
+    /// Set if the middle mouse button is pressed
+    pub(crate) fn set_mouse_middle(&mut self, value: bool) {
+        self.middle_button = value;
+    }
+
+    /// Is the right mouse button pressed
+    pub fn mouse_right(&self) -> bool {
+        self.right_button
+    }
+
+    /// Set if the right mouse button is pressed
+    pub(crate) fn set_mouse_right(&mut self, value: bool) {
+        self.right_button = value;
+    }
+
+    /// Is the fourth mouse button pressed
+    pub fn mouse_four(&self) -> bool {
+        self.mouse_four
+    }
+
+    /// Set if the fourth mouse button is pressed
+    pub(crate) fn set_mouse_four(&mut self, value: bool) {
+        self.mouse_four = value;
+    }
+
+    /// Is the fifth mouse button pressed
+    pub fn mouse_five(&self) -> bool {
+        self.mouse_five
+    }
+
+    /// Set if the fifth mouse button pressed
+    pub(crate) fn set_mouse_five(&mut self, value: bool) {
+        self.mouse_five = value;
+    }
+}
+
 /// The state of the user input on the current frame
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct InputState {
@@ -115,101 +215,7 @@ impl InputState {
         }
     }
 
-    /// Get the current (x, y) position of the mouse
-    pub fn mouse_position(&self) -> (i32, i32) {
-        (self.mouse.x, self.mouse.y)
-    }
-
-    /// Set the current mouse position this frame
-    pub(crate) fn set_mouse_position(&mut self, x: i32, y: i32) {
-        self.mouse.x = x;
-        self.mouse.y = y;
-    }
-
-    /// Get the amount the mouse moved in the current frame
-    pub fn mouse_delta(&self) -> (i32, i32) {
-        (self.mouse.delta_x, self.mouse.delta_y)
-    }
-
-    /// Set the amount the mouse moved in the current frame
-    pub(crate) fn set_mouse_delta(&mut self, x: i32, y: i32) {
-        self.mouse.delta_x = x;
-        self.mouse.delta_y = y;
-    }
-
-    /// Get the cumulative scroll position of the mouse wheel
-    /// result = (horizontal, vertical), horizontal scroll might not be possible
-    /// depending upon the mouse
-    pub fn wheel_position(&self) -> (i32, i32) {
-        (self.mouse.wheel_x, self.mouse.wheel_y)
-    }
-
-    /// Set the current mouse scroll position
-    pub(crate) fn set_wheel_position(&mut self, x: i32, y: i32) {
-        self.mouse.wheel_x = x;
-        self.mouse.wheel_y = y;
-    }
-
-    /// Get how much the mouse wheel has moved in the current frame
-    /// result = (horizontal, vertical)
-    pub fn wheel_delta(&self) -> (i32, i32) {
-        (self.mouse.wheel_delta_x, self.mouse.wheel_delta_y)
-    }
-
-    /// Set the current frames's scroll wheel change.  This does not
-    /// update the scroll wheel position, just the delta.
-    pub(crate) fn set_wheel_delta(&mut self, x: i32, y: i32) {
-        self.mouse.wheel_delta_x = x;
-        self.mouse.wheel_delta_y = y;
-    }
-
-    /// Is the left mouse button pressed
-    pub fn mouse_left(&self) -> bool {
-        self.mouse.left_button
-    }
-
-    /// Set if the left mouse button is pressed
-    pub(crate) fn set_mouse_left(&mut self, value: bool) {
-        self.mouse.left_button = value;
-    }
-
-    /// Is the middle mouse button pressed
-    pub fn mouse_middle(&self) -> bool {
-        self.mouse.middle_button
-    }
-
-    /// Set if the middle mouse button is pressed
-    pub(crate) fn set_mouse_middle(&mut self, value: bool) {
-        self.mouse.middle_button = value;
-    }
-
-    /// Is the right mouse button pressed
-    pub fn mouse_right(&self) -> bool {
-        self.mouse.right_button
-    }
-
-    /// Set if the right mouse button is pressed
-    pub(crate) fn set_mouse_right(&mut self, value: bool) {
-        self.mouse.right_button = value;
-    }
-
-    /// Is the fourth mouse button pressed
-    pub fn mouse_four(&self) -> bool {
-        self.mouse.mouse_four
-    }
-
-    /// Set if the fourth mouse button is pressed
-    pub(crate) fn set_mouse_four(&mut self, value: bool) {
-        self.mouse.mouse_four = value;
-    }
-
-    /// Is the fifth mouse button pressed
-    pub fn mouse_five(&self) -> bool {
-        self.mouse.mouse_five
-    }
-
-    /// Set if the fifth mouse button pressed
-    pub(crate) fn set_mouse_five(&mut self, value: bool) {
-        self.mouse.mouse_five = value;
+    pub fn mouse(&self) -> MouseState {
+        self.mouse
     }
 }

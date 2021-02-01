@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::{event::Event, input::InputState};
+use super::{event::Event, input::MouseState};
 
 /// The startup settings to configure a new window with
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -47,9 +47,8 @@ pub trait Window {
     /// Allow the window to capture the mouse, e.g. for first person camera support
     fn set_mouse_capture(&mut self, state: bool);
 
-    /// Take the last frames mouse state and update it with the current frames
-    /// mouse state
-    fn update_mouse(&mut self, state: &mut InputState);
+    /// Get the current state of the mouse
+    fn update_mouse(&mut self) -> MouseState;
 
     /// Run the required functions at the end of a frame, for example swapping
     /// double buffers

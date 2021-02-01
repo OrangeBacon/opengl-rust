@@ -42,7 +42,7 @@ pub struct Camera {
     /// mow fast does the zoom level change when the scroll wheel is used
     zoom_speed: f32,
 }
-
+/*
 impl Camera {
     /// create a new camera using the default settings
     pub fn new() -> Self {
@@ -145,3 +145,4 @@ impl Camera {
         self.up = glm::normalize(&glm::cross(&self.right, &self.front));
     }
 }
+*/

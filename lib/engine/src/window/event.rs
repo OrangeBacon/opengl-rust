@@ -1,10 +1,13 @@
-use super::scancode::Scancode;
+use super::{input::MouseState, scancode::Scancode};
 
 /// An generic event, from any source
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Event {
     /// The window was resized to have new width and height
-    Resize { width: u32, height: u32 },
+    Resize {
+        width: u32,
+        height: u32,
+    },
 
     /// The window gained user focus
     FocusGained,
@@ -13,14 +16,25 @@ pub enum Event {
     FocusLost,
 
     /// A key was pressed down
-    KeyDown { key: Scancode },
+    KeyDown {
+        key: Scancode,
+    },
 
     /// A key was released
-    KeyUp { key: Scancode },
+    KeyUp {
+        key: Scancode,
+    },
 
     /// The window's quit button was pressed
     Quit,
 
     /// The mouse scroll wheel was moved
-    Scroll { x: i32, y: i32 },
+    Scroll {
+        x: i32,
+        y: i32,
+    },
+
+    MouseMove {
+        data: MouseState,
+    },
 }
