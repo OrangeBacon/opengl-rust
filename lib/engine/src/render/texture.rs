@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use crate::resources::{Error as ResourceError, Resources};
 use anyhow::Result;
 use gl::types::*;
+use image::{ImageBuffer, Rgb};
 use thiserror::Error;
 
 /// Errors representing issues loading and decoding images
@@ -44,14 +47,14 @@ impl Default for Sampler {
 }
 
 /// A loaded texture, stored on the GPU.  When dropped, the vram is released.
-#[derive(Debug)]
-pub struct Texture {
-    gl: gl::Gl,
-    id: GLuint,
-    texture_index: GLuint,
+pub struct TextureData {
+    image: ImageBuffer<Rgb<u8>, Vec<u8>>,
+    sampler: Sampler,
+    id: u64,
+    index: GLuint,
 }
 
-impl Texture {
+impl TextureData {
     /// Read an image from a file and load it into the GPU
     /// gl: current OpenGL context to load using
     /// res: current resource loader
@@ -59,26 +62,26 @@ impl Texture {
     /// index: active texture unit number that gets used during texture loading
     ///    and when binding the texture
     pub fn from_res(
-        gl: &gl::Gl,
         res: &Resources,
         name: &str,
-        index: GLuint,
         sampler: Sampler,
+        id: u64,
+        index: GLuint,
     ) -> Result<Self, Error> {
         let data = res.load_bytes(name).map_err(|e| Error::ResourceLoad {
             name: name.to_string(),
             inner: e,
         })?;
 
-        Texture::load_from_bytes(gl, index, &data, name, sampler)
+        TextureData::load_from_bytes(&data, name, sampler, id, index)
     }
 
     pub fn load_from_bytes(
-        gl: &gl::Gl,
-        index: GLuint,
         data: &[u8],
         name: &str,
         sampler: Sampler,
+        id: u64,
+        index: GLuint,
     ) -> Result<Self, Error> {
         let image = image::load_from_memory(data);
 
@@ -88,6 +91,42 @@ impl Texture {
                 inner: e,
             })?
             .into_rgb8();
+
+        Ok(TextureData {
+            image,
+            sampler,
+            id,
+            index,
+        })
+    }
+
+    pub fn width(&self) -> u32 {
+        self.image.width()
+    }
+
+    pub fn height(&self) -> u32 {
+        self.image.height()
+    }
+
+    pub fn img_ptr(&self) -> *const u8 {
+        self.image.as_ptr()
+    }
+
+    pub fn sampler(&self) -> &Sampler {
+        &self.sampler
+    }
+}
+
+pub struct TextureRender {
+    gl: gl::Gl,
+    index: GLenum,
+    id: GLuint,
+}
+
+impl TextureRender {
+    fn new(gl: &gl::Gl, image: &TextureData) -> Self {
+        let sampler = image.sampler();
+        let index = image.index;
 
         let mut texture = 0;
         unsafe {
@@ -109,28 +148,23 @@ impl Texture {
                 0,
                 gl::RGB,
                 gl::UNSIGNED_BYTE,
-                image.as_ptr() as _,
+                image.img_ptr() as _,
             );
 
             gl.GenerateMipmap(gl::TEXTURE_2D);
         }
 
-        Ok(Texture {
-            texture_index: index,
+        TextureRender {
+            index,
             gl: gl.clone(),
             id: texture,
-        })
-    }
-
-    /// Get the index of the texture's active texture unit.
-    pub fn index(&self) -> GLuint {
-        self.texture_index
+        }
     }
 
     /// Bind this texture to the current shader program.
     pub fn bind(&self) {
         unsafe {
-            self.gl.ActiveTexture(gl::TEXTURE0 + self.texture_index);
+            self.gl.ActiveTexture(gl::TEXTURE0 + self.index);
             self.gl.BindTexture(gl::TEXTURE_2D, self.id);
         }
     }
@@ -139,18 +173,39 @@ impl Texture {
     /// texture will override the previously bound one.
     pub fn unbind(&self) {
         unsafe {
-            self.gl.ActiveTexture(gl::TEXTURE0 + self.texture_index);
+            self.gl.ActiveTexture(gl::TEXTURE0 + self.index);
             self.gl.BindTexture(gl::TEXTURE_2D, 0);
         }
     }
 }
 
-impl Drop for Texture {
+impl Drop for TextureRender {
     /// deletes the texture from vram
     fn drop(&mut self) {
         unsafe {
             self.unbind();
             self.gl.DeleteTextures(1, &self.id);
         }
+    }
+}
+
+pub struct TextureCache {
+    texures: HashMap<u64, TextureRender>,
+}
+
+impl TextureCache {
+    pub fn new() -> Self {
+        TextureCache {
+            texures: HashMap::new(),
+        }
+    }
+
+    pub fn load(&mut self, gl: &gl::Gl, image: TextureData) {
+        let tex = TextureRender::new(gl, &image);
+        self.texures.insert(image.id, tex);
+    }
+
+    pub fn unload(&mut self, id: u64) {
+        self.texures.remove(&id);
     }
 }

@@ -1,9 +1,11 @@
 use anyhow::Result;
 use engine::{
+    camera::{CameraData, CameraRender},
     data, gl, glm, gltf,
+    render::texture::TextureCache,
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
-    Camera, EngineState, EngineUpdateState, EventResult, MainLoop, Model, Renderer, Updater,
+    EngineState, EngineUpdateState, EventResult, MainLoop, Model, Renderer, Updater,
 };
 use gl_derive::VertexAttribPointers;
 use native_dialog::FileDialog;
@@ -20,12 +22,15 @@ struct Vertex {
 }
 
 struct Triangle {
-    camera: Camera,
+    camera: CameraData,
     model: Model,
 }
 
 #[derive(Default)]
-struct TriangleRender {}
+struct TriangleRender {
+    camera: CameraRender,
+    textures: TextureCache,
+}
 
 impl Triangle {
     fn swap_model(&mut self, gl: &gl::Gl) {
@@ -81,6 +86,34 @@ impl Updater<TriangleRender> for Triangle {
         let mut model = Model::new(model, &res, "sea_keep_lonely_watcher")?;
         model.load_vram(&state.gl)?;
 
+        Ok(Triangle {
+            model,
+            camera: CameraData::new(),
+        })
+    }
+
+    fn handle_event(&mut self, state: &mut EngineUpdateState, event: &Event) -> EventResult {
+        match event {
+            Event::KeyDown {
+                key: Scancode::O, ..
+            } => {
+                self.swap_model(state.gl);
+                EventResult::Handled
+            }
+            _ => EventResult::Ignored,
+        }
+    }
+
+    fn update(&mut self, state: &mut EngineUpdateState, data: &TriangleRender, dt: f32) {
+        self.camera.update(state, &mut data.camera, dt);
+    }
+}
+
+impl Renderer<TriangleRender> for TriangleRender {
+    fn new(state: &EngineState) -> Result<Self>
+    where
+        Self: Sized,
+    {
         let (width, height) = state.window.size();
 
         unsafe {
@@ -90,25 +123,10 @@ impl Updater<TriangleRender> for Triangle {
             //state.gl.PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
         }
 
-        Ok(Triangle {
-            model,
-            camera: Camera::new(),
+        Ok(TriangleRender {
+            camera: CameraRender::new(),
+            textures: TextureCache::new(),
         })
-    }
-
-    fn handle_event(&mut self, state: &mut EngineUpdateState, event: &Event) -> EventResult {}
-
-    fn update(&mut self, state: &TriangleRender, dt: f32) {
-        self.camera.update(state, dt);
-    }
-}
-
-impl Renderer<TriangleRender> for TriangleRender {
-    fn new(state: &EngineState) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        todo!()
     }
 
     fn render(&mut self, state: &EngineState, data: &TriangleRender) {
@@ -120,12 +138,12 @@ impl Renderer<TriangleRender> for TriangleRender {
 
         let projection = glm::perspective(
             width as f32 / height as f32,
-            self.camera.get_fov(),
+            data.camera.fov(),
             0.1,
             10000.0,
         );
 
-        let view = self.camera.get_view();
+        let view = data.camera.view();
 
         self.model.render(&state.gl, &projection, &view);
     }

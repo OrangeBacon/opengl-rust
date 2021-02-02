@@ -1,14 +1,14 @@
 use nalgebra_glm as glm;
 use scancode::Scancode;
 
-use crate::{window::scancode, EngineState};
+use crate::{window::scancode, EngineUpdateState};
 
 /// Simple camera object
 /// uses euler angles, prevents looking up so that it doesn't gimble lock
 /// Allows flying in any direction, is not bound to any plane.
 /// No roll implemented. Scroll wheel to zoom in, wasd to move, mouse to chenge
 /// direction
-pub struct Camera {
+pub struct CameraData {
     /// current camera position
     pos: glm::Vec3,
 
@@ -42,8 +42,13 @@ pub struct Camera {
     /// mow fast does the zoom level change when the scroll wheel is used
     zoom_speed: f32,
 }
-/*
-impl Camera {
+
+pub struct CameraRender {
+    fov: f32,
+    view: glm::Mat4,
+}
+
+impl CameraData {
     /// create a new camera using the default settings
     pub fn new() -> Self {
         let up = glm::vec3(0.0, 1.0, 0.0);
@@ -77,7 +82,7 @@ impl Camera {
     }
 
     /// update the camera's location from user input
-    pub fn update(&mut self, state: &EngineState, dt: f32) {
+    pub fn update(&mut self, state: &EngineUpdateState, data: &mut CameraRender, dt: f32) {
         // move the camera with wasd
         let camera_speed = self.movement_speed * dt;
         if state.inputs.is_key_pressed(Scancode::W) {
@@ -100,7 +105,7 @@ impl Camera {
         }
 
         // move the camera based upon mouse movement
-        let (x, y) = state.inputs.mouse_delta();
+        let (x, y) = state.inputs.mouse().mouse_delta();
         let x_offset = x as f32 * self.mouse_sensitivity;
         let y_offset = y as f32 * self.mouse_sensitivity;
 
@@ -115,7 +120,7 @@ impl Camera {
         }
 
         // change the zoom level depending upon scroll wheel
-        self.zoom += self.zoom_speed * state.inputs.wheel_delta().1 as f32;
+        self.zoom += self.zoom_speed * state.inputs.mouse().wheel_delta().1 as f32;
         if self.zoom < 1.0 {
             self.zoom = 1.0;
         }
@@ -124,6 +129,9 @@ impl Camera {
         }
 
         self.update_vectors();
+
+        data.view = self.get_view();
+        data.fov = self.get_fov();
     }
 
     /// re-calculate internal vectors, should be run every time one of the
@@ -145,4 +153,20 @@ impl Camera {
         self.up = glm::normalize(&glm::cross(&self.right, &self.front));
     }
 }
-*/
+
+impl CameraRender {
+    fn new() -> Self {
+        CameraRender {
+            fov: 45.0,
+            view: glm::Mat4::identity(),
+        }
+    }
+
+    fn fov(&self) -> f32 {
+        self.fov
+    }
+
+    fn view(&self) -> glm::Mat4 {
+        self.view
+    }
+}

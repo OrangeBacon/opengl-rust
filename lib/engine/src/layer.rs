@@ -51,5 +51,5 @@ pub trait Updater<T: Send + Default> {
     /// Physics update function, called with a fixed dt, shouldn't change between
     /// update calls.  Can be called multiple times per render.
     /// dt: delta time, the period of time for this update in seconds
-    fn update(&mut self, state: &T, dt: f32);
+    fn update(&mut self, state: &mut EngineUpdateState, data: &T, dt: f32);
 }

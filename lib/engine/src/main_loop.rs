@@ -141,7 +141,7 @@ where
                 }
 
                 while accumulator >= DT {
-                    updater.update(write, DT);
+                    updater.update(&mut state, write, DT);
 
                     accumulator -= DT;
                     state.run_time += DT;
