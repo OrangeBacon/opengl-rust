@@ -161,6 +161,10 @@ impl TextureRender {
         }
     }
 
+    pub fn index(&self) -> GLenum {
+        self.index
+    }
+
     /// Bind this texture to the current shader program.
     pub fn bind(&self) {
         unsafe {

@@ -1,8 +1,5 @@
-use crate::glm;
-use crate::{
-    resources::{Error as ResourceError, Resources},
-    Texture,
-};
+use crate::resources::{Error as ResourceError, Resources};
+use crate::{glm, render::texture::TextureRender};
 use gl::types::*;
 use std::{
     ffi::{CStr, CString},
@@ -103,7 +100,7 @@ impl Program {
     /// binds the given texture to the uniform name provided
     /// assumes that the texture's index is distinct from the previously
     /// bound textures
-    pub fn bind_texture(&self, name: &str, tex: &Texture) {
+    pub fn bind_texture(&self, name: &str, tex: &TextureRender) {
         let name = CString::new(name).unwrap();
 
         unsafe {
