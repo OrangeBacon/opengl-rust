@@ -25,21 +25,26 @@ struct Triangle {
 }
 
 impl Triangle {
-    fn swap_model(&mut self, gl: &gl::Gl) {
+    fn swap_model(&mut self, gl: &gl::Gl) -> Option<()> {
         let result = FileDialog::new()
             .add_filter("glTF Model", &["gltf", "glb"])
             .show_open_single_file();
 
         let path = match result {
             Ok(Some(path)) => path,
-            _ => return,
+            _ => return None,
         };
 
-        let mut model = match Model::from_path(&path) {
+        let folder = path.parent()?;
+        let file = path.file_name()?.to_str()?;
+
+        let res = Resources::from_path(&folder);
+
+        let mut model = match Model::from_res(&res, file) {
             Ok(model) => model,
             Err(e) => {
                 println!("error: {}", e);
-                return;
+                return None;
             }
         };
 
@@ -47,11 +52,13 @@ impl Triangle {
             Ok(_) => (),
             Err(e) => {
                 println!("error {}", e);
-                return;
+                return None;
             }
         };
 
         self.model = model;
+
+        Some(())
     }
 }
 

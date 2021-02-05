@@ -71,13 +71,13 @@ impl Model {
     /// res: relative folder to load the model from
     /// name: name of the gltf scene file
     /// to load the referenced data call `crate::Model::new(...)`
-    pub fn from_res<T: AsRef<Path>>(res: &Resources, name: T) -> Result<Self, Error> {
-        let file = res.load_bytes(&name).map_err(|e| Error::Resource {
-            name: name.as_ref().to_string_lossy().to_string(),
+    pub fn from_res(res: &Resources, path: &str) -> Result<Self, Error> {
+        let file = res.load_bytes(&path).map_err(|e| Error::Resource {
+            name: path.to_string(),
             inner: e,
         })?;
 
-        Self::from_bytes(file, name)
+        Self::from_bytes(file, path)
     }
 
     fn from_bytes<T: AsRef<Path>>(data: Vec<u8>, name: T) -> Result<Self, Error> {

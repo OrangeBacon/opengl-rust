@@ -1,5 +1,3 @@
-use std::path::{Path, PathBuf};
-
 use crate::{
     buffer, gltf,
     resources::{Error as ResourceError, Resources},
@@ -84,7 +82,7 @@ pub enum Error {
     },
 
     #[error("Could not get root path of scene: path = \"{inner}\"")]
-    RootPath { inner: PathBuf },
+    RootPath { inner: String },
 }
 
 pub struct ModelShaders {
@@ -107,38 +105,19 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn from_res<T: AsRef<Path>>(res: &Resources, path: T) -> Result<Self, Error> {
-        let parent = path.as_ref().parent().ok_or_else(|| Error::RootPath {
-            inner: path.as_ref().to_path_buf(),
+    pub fn from_res(res: &Resources, path: &str) -> Result<Self, Error> {
+        let parent = res.extend_file_root(path).ok_or(Error::RootPath {
+            inner: path.to_string(),
         })?;
 
-        let gltf = gltf::Model::from_res(res, &path).map_err(|e| Error::Gltf { inner: e })?;
+        let gltf = gltf::Model::from_res(res, path).map_err(|e| Error::Gltf { inner: e })?;
 
-        let model = Model::from_gltf(gltf, res, parent)?;
+        let model = Model::from_gltf(gltf, &parent)?;
 
         Ok(model)
     }
 
-    pub fn from_path<T: AsRef<Path>>(path: T) -> Result<Self, Error> {
-        let res = Resources::from_path(&path).map_err(|e| Error::BufferLoad {
-            name: path.as_ref().to_string_lossy().to_string(),
-            inner: e,
-        })?;
-
-        let file_name = path.as_ref().file_name().ok_or_else(|| Error::RootPath {
-            inner: path.as_ref().to_path_buf(),
-        })?;
-
-        Self::from_res(&res, &file_name)
-    }
-
-    pub fn from_gltf<T: AsRef<Path>>(
-        mut gltf: gltf::Model,
-        res: &Resources,
-        folder: T,
-    ) -> Result<Self, Error> {
-        let res = res.extend(folder);
-
+    pub fn from_gltf(mut gltf: gltf::Model, res: &Resources) -> Result<Self, Error> {
         let mut default_buffer = gltf.default_buffer.take();
 
         let buffers = gltf
