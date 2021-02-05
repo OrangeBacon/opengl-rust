@@ -15,6 +15,9 @@ pub enum Error {
 
     #[error("Failed to load current executable path")]
     FailedToGetExePath,
+
+    #[error("Failed to get path's parent")]
+    Parent,
 }
 
 pub struct Resources {
@@ -24,6 +27,18 @@ pub struct Resources {
 impl Resources {
     pub fn new(path: PathBuf) -> Resources {
         Resources { root_path: path }
+    }
+
+    pub fn from_path<T: AsRef<Path>>(path: T) -> Result<Self, Error> {
+        let path = if path.as_ref().is_file() {
+            path.as_ref().parent().ok_or(Error::Parent)?
+        } else {
+            path.as_ref()
+        };
+
+        Ok(Resources {
+            root_path: path.to_path_buf(),
+        })
     }
 
     pub fn from_exe_path(rel_path: &Path) -> Result<Resources, Error> {

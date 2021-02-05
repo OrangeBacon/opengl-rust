@@ -1,13 +1,13 @@
 use anyhow::Result;
 use engine::{
-    data, gl, glm, gltf,
+    data, gl, glm,
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
     Camera, EngineState, EventResult, Layer, MainLoop, Model,
 };
 use gl_derive::VertexAttribPointers;
 use native_dialog::FileDialog;
-use std::{ffi::OsStr, path::Path};
+use std::path::Path;
 
 #[derive(VertexAttribPointers, Copy, Clone, Debug)]
 #[repr(C, packed)]
@@ -35,38 +35,23 @@ impl Triangle {
             _ => return,
         };
 
-        let folder = match path.parent() {
-            Some(p) => p,
-            _ => return,
-        };
-
-        let file = match path.file_name() {
-            Some(n) => n,
-            _ => return,
-        };
-
-        let res = Resources::new(folder.to_path_buf());
-
-        let model = match Triangle::load_model(gl, &res, file) {
+        let mut model = match Model::from_path(&path) {
             Ok(model) => model,
             Err(e) => {
-                println!("{}", e);
+                println!("error: {}", e);
+                return;
+            }
+        };
+
+        match model.load_vram(gl) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("error {}", e);
                 return;
             }
         };
 
         self.model = model;
-    }
-
-    fn load_model(gl: &gl::Gl, res: &Resources, path: &OsStr) -> Result<Model> {
-        let model = gltf::Model::from_res(&res, path)?;
-
-        let mut model = Model::new(model, &res, "./")?;
-        model.load_vram(gl)?;
-
-        println!("{:?}", model);
-
-        Ok(model)
     }
 }
 
@@ -74,8 +59,7 @@ impl Layer for Triangle {
     fn new(state: &EngineState) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
 
-        let model = gltf::Model::from_res(&res, "sea_keep_lonely_watcher/scene.gltf")?;
-        let mut model = Model::new(model, &res, "sea_keep_lonely_watcher")?;
+        let mut model = Model::from_res(&res, "sea_keep_lonely_watcher/scene.gltf")?;
         model.load_vram(&state.gl)?;
 
         let (width, height) = state.window.size();

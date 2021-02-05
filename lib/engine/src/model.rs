@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::{
     buffer, gltf,
@@ -76,6 +76,15 @@ pub enum Error {
 
     #[error("No buffer view or uri defined on image")]
     NoSource,
+
+    #[error("Error while loading model: {inner}")]
+    Gltf {
+        #[source]
+        inner: gltf::Error,
+    },
+
+    #[error("Could not get root path of scene: path = \"{inner}\"")]
+    RootPath { inner: PathBuf },
 }
 
 pub struct ModelShaders {
@@ -98,7 +107,32 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn new<T: AsRef<Path>>(
+    pub fn from_res<T: AsRef<Path>>(res: &Resources, path: T) -> Result<Self, Error> {
+        let parent = path.as_ref().parent().ok_or_else(|| Error::RootPath {
+            inner: path.as_ref().to_path_buf(),
+        })?;
+
+        let gltf = gltf::Model::from_res(res, &path).map_err(|e| Error::Gltf { inner: e })?;
+
+        let model = Model::from_gltf(gltf, res, parent)?;
+
+        Ok(model)
+    }
+
+    pub fn from_path<T: AsRef<Path>>(path: T) -> Result<Self, Error> {
+        let res = Resources::from_path(&path).map_err(|e| Error::BufferLoad {
+            name: path.as_ref().to_string_lossy().to_string(),
+            inner: e,
+        })?;
+
+        let file_name = path.as_ref().file_name().ok_or_else(|| Error::RootPath {
+            inner: path.as_ref().to_path_buf(),
+        })?;
+
+        Self::from_res(&res, &file_name)
+    }
+
+    pub fn from_gltf<T: AsRef<Path>>(
         mut gltf: gltf::Model,
         res: &Resources,
         folder: T,
@@ -277,7 +311,7 @@ impl Model {
 pub struct GlBuffer {
     buf: Option<buffer::Buffer>,
     stride: i32,
-    data: Option<Vec<u8>>
+    data: Option<Vec<u8>>,
 }
 
 impl GlBuffer {

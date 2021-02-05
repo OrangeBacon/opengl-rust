@@ -5,7 +5,7 @@
 //! For more infomation about the file format parsed in this file see
 //! https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md
 
-use std::{collections::HashMap, convert::TryInto, path::Path, string::FromUtf8Error};
+use std::{collections::HashMap, convert::TryInto, io::Read, path::Path, string::FromUtf8Error};
 
 use anyhow::Result;
 use gl::types::GLenum;
@@ -48,9 +48,25 @@ pub enum Error {
 
     #[error("GLB chunk type error")]
     ChunkError,
+
+    #[error("IO Error: \n{inner}")]
+    IoError {
+        #[from]
+        #[source]
+        inner: std::io::Error,
+    },
 }
 
 impl Model {
+    pub fn from_path<T: AsRef<Path>>(path: T) -> Result<Self, Error> {
+        let mut file = std::fs::File::open(path.as_ref())?;
+
+        let mut buffer: Vec<u8> = Vec::with_capacity(file.metadata()?.len() as usize + 1);
+        file.read_to_end(&mut buffer)?;
+
+        Self::from_bytes(buffer, path)
+    }
+
     /// load a gltf model from a file
     /// res: relative folder to load the model from
     /// name: name of the gltf scene file
@@ -61,16 +77,20 @@ impl Model {
             inner: e,
         })?;
 
+        Self::from_bytes(file, name)
+    }
+
+    fn from_bytes<T: AsRef<Path>>(data: Vec<u8>, name: T) -> Result<Self, Error> {
         // binary glb files always begin with "glTF", as this is not valid JSON
         // that makes it easy to distinguish between the plain text and binary
         // files, ignoring their file extension
-        if file.starts_with(b"glTF") {
-            return Model::from_binary(file);
+        if data.starts_with(b"glTF") {
+            return Model::from_binary(data);
         }
 
-        let file = String::from_utf8(file)?;
+        let data = String::from_utf8(data)?;
 
-        let model: Model = serde_json::from_str(&file).map_err(|e| Error::Parse {
+        let model: Model = serde_json::from_str(&data).map_err(|e| Error::Parse {
             name: name.as_ref().to_string_lossy().to_string(),
             inner: e,
         })?;
