@@ -193,13 +193,13 @@ impl Drop for TextureRender {
     }
 }
 
-pub struct TextureCache {
+pub struct TextureRenderCache {
     texures: HashMap<u64, TextureRender>,
 }
 
-impl TextureCache {
+impl TextureRenderCache {
     pub fn new() -> Self {
-        TextureCache {
+        TextureRenderCache {
             texures: HashMap::new(),
         }
     }

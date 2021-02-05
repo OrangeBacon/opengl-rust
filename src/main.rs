@@ -2,7 +2,7 @@ use anyhow::Result;
 use engine::{
     camera::{CameraData, CameraRender},
     data, gl, glm, gltf,
-    render::texture::TextureCache,
+    render::texture::TextureRenderCache,
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
     EngineState, EngineUpdateState, EventResult, MainLoop, Model, Renderer, Updater,
@@ -29,7 +29,6 @@ struct Triangle {
 #[derive(Default)]
 struct TriangleRender {
     camera: CameraRender,
-    textures: TextureCache,
 }
 
 impl Triangle {
@@ -109,7 +108,11 @@ impl Updater<TriangleRender> for Triangle {
     }
 }
 
-impl Renderer<TriangleRender> for TriangleRender {
+struct OpenGlRenderer {
+    textures: TextureRenderCache,
+}
+
+impl Renderer<TriangleRender> for OpenGlRenderer {
     fn new(state: &EngineState) -> Result<Self>
     where
         Self: Sized,
@@ -123,9 +126,8 @@ impl Renderer<TriangleRender> for TriangleRender {
             //state.gl.PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
         }
 
-        Ok(TriangleRender {
-            camera: CameraRender::new(),
-            textures: TextureCache::new(),
+        Ok(OpenGlRenderer {
+            textures: TextureRenderCache::new(),
         })
     }
 
