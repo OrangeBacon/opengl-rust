@@ -1,8 +1,5 @@
-use crate::glm;
-use crate::{
-    resources::{Error as ResourceError, Resources},
-    Texture,
-};
+use crate::resources::{Error as ResourceError, Resources};
+use crate::{glm, texture::BoundTexture};
 use gl::types::*;
 use std::{
     ffi::{CStr, CString},
@@ -94,33 +91,8 @@ impl Program {
         })
     }
 
-    pub fn set_used(&self) {
-        unsafe {
-            self.gl.UseProgram(self.id);
-        }
-    }
-
-    /// binds the given texture to the uniform name provided
-    /// assumes that the texture's index is distinct from the previously
-    /// bound textures
-    pub fn bind_texture(&self, name: &str, tex: &Texture) {
-        let name = CString::new(name).unwrap();
-
-        unsafe {
-            let loc = self.gl.GetUniformLocation(self.id, name.as_ptr() as _);
-            self.gl.Uniform1i(loc, tex.index() as _);
-            tex.bind();
-        }
-    }
-
-    pub fn bind_matrix(&self, name: &str, mat: glm::Mat4) {
-        let name = CString::new(name).unwrap();
-
-        unsafe {
-            let loc = self.gl.GetUniformLocation(self.id, name.as_ptr() as _);
-            self.gl
-                .UniformMatrix4fv(loc, 1, gl::FALSE, mat.as_slice().as_ptr());
-        }
+    pub fn set_used(&self) -> BoundProgram {
+        BoundProgram::new(self)
     }
 }
 
@@ -128,6 +100,47 @@ impl Drop for Program {
     fn drop(&mut self) {
         unsafe {
             self.gl.DeleteProgram(self.id);
+        }
+    }
+}
+
+pub struct BoundProgram<'a> {
+    program: &'a Program,
+}
+
+impl<'a> BoundProgram<'a> {
+    fn new(program: &'a Program) -> Self {
+        unsafe {
+            program.gl.UseProgram(program.id);
+        }
+        Self { program }
+    }
+    /// binds the given texture to the uniform name provided
+    /// assumes that the texture's index is distinct from the previously
+    /// bound textures
+    pub fn bind_texture(&self, name: &str, tex: &BoundTexture) {
+        let name = CString::new(name).unwrap();
+
+        unsafe {
+            let loc = self
+                .program
+                .gl
+                .GetUniformLocation(self.program.id, name.as_ptr() as _);
+            self.program.gl.Uniform1i(loc, tex.index() as _);
+        }
+    }
+
+    pub fn bind_matrix(&self, name: &str, mat: glm::Mat4) {
+        let name = CString::new(name).unwrap();
+
+        unsafe {
+            let loc = self
+                .program
+                .gl
+                .GetUniformLocation(self.program.id, name.as_ptr() as _);
+            self.program
+                .gl
+                .UniformMatrix4fv(loc, 1, gl::FALSE, mat.as_slice().as_ptr());
         }
     }
 }

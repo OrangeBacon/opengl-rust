@@ -48,7 +48,6 @@ impl Default for Sampler {
 pub struct Texture {
     gl: gl::Gl,
     id: GLuint,
-    texture_index: GLuint,
 }
 
 impl Texture {
@@ -116,32 +115,14 @@ impl Texture {
         }
 
         Ok(Texture {
-            texture_index: index,
             gl: gl.clone(),
             id: texture,
         })
     }
 
-    /// Get the index of the texture's active texture unit.
-    pub fn index(&self) -> GLuint {
-        self.texture_index
-    }
-
     /// Bind this texture to the current shader program.
-    pub fn bind(&self) {
-        unsafe {
-            self.gl.ActiveTexture(gl::TEXTURE0 + self.texture_index);
-            self.gl.BindTexture(gl::TEXTURE_2D, self.id);
-        }
-    }
-
-    /// Unbind this texture, is normally not needed as binding a different
-    /// texture will override the previously bound one.
-    pub fn unbind(&self) {
-        unsafe {
-            self.gl.ActiveTexture(gl::TEXTURE0 + self.texture_index);
-            self.gl.BindTexture(gl::TEXTURE_2D, 0);
-        }
+    pub fn bind(&self, index: GLuint) -> BoundTexture {
+        BoundTexture::new(self, index)
     }
 }
 
@@ -149,8 +130,37 @@ impl Drop for Texture {
     /// deletes the texture from vram
     fn drop(&mut self) {
         unsafe {
-            self.unbind();
             self.gl.DeleteTextures(1, &self.id);
+        }
+    }
+}
+
+pub struct BoundTexture<'a> {
+    tex: &'a Texture,
+    index: GLuint,
+}
+
+impl<'a> BoundTexture<'a> {
+    fn new(tex: &'a Texture, index: GLuint) -> Self {
+        unsafe {
+            tex.gl.ActiveTexture(gl::TEXTURE0 + index);
+            tex.gl.BindTexture(gl::TEXTURE_2D, tex.id);
+        }
+
+        Self { tex, index }
+    }
+
+    /// Get the index of the texture's active texture unit.
+    pub fn index(&self) -> GLuint {
+        self.index
+    }
+}
+
+impl<'a> Drop for BoundTexture<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            self.tex.gl.ActiveTexture(gl::TEXTURE0 + self.index);
+            self.tex.gl.BindTexture(gl::TEXTURE_2D, 0);
         }
     }
 }

@@ -4,6 +4,7 @@ pub mod gltf;
 pub mod imgui;
 pub mod resources;
 pub mod scene;
+pub mod texture;
 pub mod window;
 
 mod shader;
@@ -14,9 +15,6 @@ pub use create_shader::DynamicShader;
 
 mod model;
 pub use model::{Model, ModelShaders};
-
-mod texture;
-pub use texture::Texture;
 
 mod layer;
 pub use layer::{EventResult, Layer};

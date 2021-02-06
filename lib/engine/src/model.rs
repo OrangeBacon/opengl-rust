@@ -1,7 +1,9 @@
 use crate::{
     buffer, gltf,
     resources::{Error as ResourceError, Resources},
-    texture, DynamicShader, Program, Texture,
+    texture,
+    texture::Texture,
+    DynamicShader, Program,
 };
 use anyhow::Result;
 use gl::types::{GLenum, GLsizei};
@@ -426,15 +428,18 @@ impl GlPrim {
         proj: &glm::Mat4,
         view: &glm::Mat4,
     ) {
-        self.shader.set_used();
-        self.shader.bind_matrix("view", *view);
-        self.shader.bind_matrix("projection", *proj);
-        self.shader.bind_matrix("model", *model_mat);
+        let shader = self.shader.set_used();
+        shader.bind_matrix("view", *view);
+        shader.bind_matrix("projection", *proj);
+        shader.bind_matrix("model", *model_mat);
 
-        if let Some(idx) = self.base_color {
-            let tex = &model.gl_textures[idx];
-            self.shader.bind_texture("baseColor", tex);
-        }
+        let _tex = if let Some(idx) = self.base_color {
+            let tex = model.gl_textures[idx].bind(idx as _);
+            shader.bind_texture("baseColor", &tex);
+            Some(tex)
+        } else {
+            None
+        };
 
         self.vao.bind();
 
