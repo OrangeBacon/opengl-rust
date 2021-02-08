@@ -1,6 +1,6 @@
 //! This file contains a parser for the json gLTF 3D object format
-//! It defines a deserialiser into rust structures, however does not do any
-//! processing on the file.
+//! It defines a deserialiser into rust structures and processes it into
+//! a more useful format for consumption by renderers
 //!
 //! For more infomation about the file format parsed in this file see
 //! https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md

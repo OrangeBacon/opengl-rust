@@ -1,9 +1,10 @@
 use anyhow::Result;
 use engine::{
     data, gl, glm,
+    model::Model,
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
-    Camera, EngineState, EventResult, Layer, MainLoop, Model,
+    Camera, EngineState, EventResult, Layer, MainLoop,
 };
 use gl_derive::VertexAttribPointers;
 use native_dialog::FileDialog;

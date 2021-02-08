@@ -7,7 +7,6 @@ use crate::{
 };
 use anyhow::Result;
 use gl::types::{GLenum, GLsizei};
-use gltf::BufferView;
 use nalgebra_glm as glm;
 use slotmap::{DefaultKey, SlotMap};
 use thiserror::Error;
@@ -92,6 +91,8 @@ pub struct ModelShaders {
     pub color: Program,
 }
 
+/// A 3d gltf model, including all its data.  Not dependant upon any rendering
+/// backend
 #[derive(Debug)]
 pub struct Model {
     scenes: Vec<Scene>,
@@ -99,9 +100,8 @@ pub struct Model {
     buffers: Vec<Buffer>,
     images: Vec<Vec<u8>>,
 
-    gl_buffers: Vec<GlBuffer>,
-    gl_meshes: Vec<GlMesh>,
-    gl_textures: Vec<Texture>,
+    meshes: Vec<GlMesh>,
+    textures: Vec<Texture>,
 
     pub(crate) model: gltf::Model,
 }
@@ -145,9 +145,8 @@ impl Model {
             images,
             scenes,
             model: gltf,
-            gl_buffers: vec![],
-            gl_meshes: vec![],
-            gl_textures: vec![],
+            meshes: vec![],
+            textures: vec![],
         })
     }
 
@@ -196,16 +195,12 @@ impl Model {
     }
 
     pub fn load_vram(&mut self, gl: &gl::Gl) -> Result<(), Error> {
-        for view in &self.model.buffer_views {
-            self.gl_buffers.push(GlBuffer::load_view(self, gl, view)?);
-        }
-
         for mesh in &self.model.meshes {
-            self.gl_meshes.push(GlMesh::load(gl, mesh, &self)?);
+            self.meshes.push(GlMesh::load(gl, mesh, &self)?);
         }
 
         for (idx, tex) in self.model.textures.iter().enumerate() {
-            self.gl_textures.push(self.load_texture(gl, tex, idx)?);
+            self.textures.push(self.load_texture(gl, tex, idx)?);
         }
 
         Ok(())
@@ -247,10 +242,11 @@ impl Model {
         accessor: &gltf::Accessor,
         index: u32,
     ) -> Result<(), Error> {
-        let max_len = self.gl_buffers.len();
+        let max_len = self.model.buffer_views.len();
 
         let buf = self
-            .gl_buffers
+            .model
+            .buffer_views
             .get(accessor.buffer_view)
             .ok_or_else(|| Error::BadIndex {
                 array: "buffer views",
@@ -285,62 +281,6 @@ impl Model {
 
     pub fn render(&self, gl: &gl::Gl, proj: &glm::Mat4, view: &glm::Mat4) {
         self.scenes[0].render(self, gl, proj, view);
-    }
-}
-
-#[derive(Debug)]
-pub struct GlBuffer {
-    buf: Option<buffer::Buffer>,
-    stride: i32,
-    data: Option<Vec<u8>>,
-}
-
-impl GlBuffer {
-    fn load_view(model: &Model, gl: &gl::Gl, view: &BufferView) -> Result<Self, Error> {
-        let target = if let Some(t) = view.target {
-            t
-        } else {
-            return Err(Error::NoTarget);
-        };
-
-        let buffer = model
-            .buffers
-            .get(view.buffer)
-            .ok_or_else(|| Error::BadIndex {
-                array: "buffers",
-                got: view.buffer,
-                max: model.buffers.len(),
-            })?;
-        let data = buffer
-            .data
-            .get(view.byte_offset..(view.byte_offset + view.byte_length))
-            .ok_or_else(|| Error::BadViewLen {
-                get: view.byte_offset + view.byte_length,
-                max: buffer.data.len(),
-            })?;
-
-        let buf = buffer::Buffer::new(gl, target as u32);
-        buf.bind();
-        buf.static_draw_data(data);
-        buf.unbind();
-
-        Ok(GlBuffer {
-            buf: Some(buf),
-            stride: view.byte_stride.unwrap_or_default(),
-            data: None,
-        })
-    }
-
-    fn bind(&self) {
-        if let Some(ref buf) = self.buf {
-            buf.bind();
-        }
-    }
-
-    fn unbind(&self) {
-        if let Some(ref buf) = self.buf {
-            buf.unbind();
-        }
     }
 }
 
@@ -434,7 +374,7 @@ impl GlPrim {
         shader.bind_matrix("model", *model_mat);
 
         let _tex = if let Some(idx) = self.base_color {
-            let tex = model.gl_textures[idx].bind(idx as _);
+            let tex = model.textures[idx].bind(idx as _);
             shader.bind_texture("baseColor", &tex);
             Some(tex)
         } else {
@@ -448,7 +388,7 @@ impl GlPrim {
             let view_idx = access.buffer_view;
             let view = &model.model.buffer_views[view_idx];
             let buffer_idx = view.buffer;
-            let buffer = &model.gl_buffers[buffer_idx];
+            let buffer = &model.buffer_views[buffer_idx];
             buffer.bind();
 
             let r#type = access.component_type.get_gl_type();
@@ -629,7 +569,7 @@ impl Node {
         view: &glm::Mat4,
     ) {
         if let Some(id) = self.mesh_id {
-            model.gl_meshes[id].render(model, gl, &self.global_matrix, proj, view);
+            model.meshes[id].render(model, gl, &self.global_matrix, proj, view);
         }
 
         for child in &self.children {
@@ -637,3 +577,6 @@ impl Node {
         }
     }
 }
+
+/// The state required to store the opengl state created from a model
+pub struct GLModel {}

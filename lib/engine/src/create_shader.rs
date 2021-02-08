@@ -2,7 +2,7 @@ use std::ffi::CString;
 
 use gltf::Type;
 
-use crate::{gltf, model::Error, Model, Program, Shader};
+use crate::{gltf, model::Error, model::Model, Program, Shader};
 
 pub struct DynamicShader;
 
