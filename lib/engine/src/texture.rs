@@ -1,6 +1,7 @@
 use crate::resources::{Error as ResourceError, Resources};
 use anyhow::Result;
 use gl::types::*;
+use image::{ImageBuffer, Rgb};
 use thiserror::Error;
 
 /// Errors representing issues loading and decoding images
@@ -15,10 +16,9 @@ pub enum Error {
     },
 
     /// image decoding errors
-    #[error("Error decoding image {name}: {inner}")]
+    #[error("Error decoding image: {inner}")]
     Decode {
-        name: String,
-        #[source]
+        #[from]
         inner: image::ImageError,
     },
 }
@@ -46,47 +46,51 @@ impl Default for Sampler {
 /// A loaded texture, stored on the GPU.  When dropped, the vram is released.
 #[derive(Debug)]
 pub struct Texture {
-    gl: gl::Gl,
-    id: GLuint,
+    image: ImageBuffer<Rgb<u8>, Vec<u8>>,
+    sampler: Sampler,
 }
 
 impl Texture {
-    /// Read an image from a file and load it into the GPU
-    /// gl: current OpenGL context to load using
-    /// res: current resource loader
-    /// name: path to texture relative to the current resource loader
-    /// index: active texture unit number that gets used during texture loading
-    ///    and when binding the texture
-    pub fn from_res(
-        gl: &gl::Gl,
-        res: &Resources,
-        name: &str,
-        index: GLuint,
-        sampler: Sampler,
-    ) -> Result<Self, Error> {
+    pub fn from_res(res: &Resources, name: &str, sampler: Sampler) -> Result<Self, Error> {
         let data = res.load_bytes(name).map_err(|e| Error::ResourceLoad {
             name: name.to_string(),
             inner: e,
         })?;
 
-        Texture::load_from_bytes(gl, index, &data, name, sampler)
+        Self::load_from_bytes(&data, sampler)
     }
 
-    pub fn load_from_bytes(
-        gl: &gl::Gl,
-        index: GLuint,
-        data: &[u8],
-        name: &str,
-        sampler: Sampler,
-    ) -> Result<Self, Error> {
-        let image = image::load_from_memory(data);
+    pub fn load_from_bytes(data: &[u8], sampler: Sampler) -> Result<Self, Error> {
+        let image = image::load_from_memory(data)?.into_rgb8();
 
-        let image = image
-            .map_err(|e| Error::Decode {
-                name: name.to_string(),
-                inner: e,
-            })?
-            .into_rgb8();
+        Ok(Texture { image, sampler })
+    }
+
+    pub fn width(&self) -> u32 {
+        self.image.width()
+    }
+
+    pub fn height(&self) -> u32 {
+        self.image.height()
+    }
+
+    pub fn img_ptr(&self) -> *const u8 {
+        self.image.as_ptr()
+    }
+
+    pub fn sampler(&self) -> &Sampler {
+        &self.sampler
+    }
+}
+
+struct GlTexture {
+    gl: gl::Gl,
+    id: GLuint,
+}
+
+impl GlTexture {
+    fn new(gl: &gl::Gl, image: &Texture, index: GLuint) -> Self {
+        let sampler = image.sampler();
 
         let mut texture = 0;
         unsafe {
@@ -108,25 +112,25 @@ impl Texture {
                 0,
                 gl::RGB,
                 gl::UNSIGNED_BYTE,
-                image.as_ptr() as _,
+                image.img_ptr() as _,
             );
 
             gl.GenerateMipmap(gl::TEXTURE_2D);
         }
 
-        Ok(Texture {
+        Self {
             gl: gl.clone(),
             id: texture,
-        })
+        }
     }
 
     /// Bind this texture to the current shader program.
-    pub fn bind(&self, index: GLuint) -> BoundTexture {
-        BoundTexture::new(self, index)
+    pub fn bind(&self, index: GLuint) -> BoundGlTexture {
+        BoundGlTexture::new(&self, index)
     }
 }
 
-impl Drop for Texture {
+impl Drop for GlTexture {
     /// deletes the texture from vram
     fn drop(&mut self) {
         unsafe {
@@ -135,13 +139,13 @@ impl Drop for Texture {
     }
 }
 
-pub struct BoundTexture<'a> {
-    tex: &'a Texture,
+pub struct BoundGlTexture<'a> {
+    tex: &'a GlTexture,
     index: GLuint,
 }
 
-impl<'a> BoundTexture<'a> {
-    fn new(tex: &'a Texture, index: GLuint) -> Self {
+impl<'a> BoundGlTexture<'a> {
+    fn new(tex: &'a GlTexture, index: GLuint) -> Self {
         unsafe {
             tex.gl.ActiveTexture(gl::TEXTURE0 + index);
             tex.gl.BindTexture(gl::TEXTURE_2D, tex.id);
@@ -156,7 +160,7 @@ impl<'a> BoundTexture<'a> {
     }
 }
 
-impl<'a> Drop for BoundTexture<'a> {
+impl<'a> Drop for BoundGlTexture<'a> {
     fn drop(&mut self) {
         unsafe {
             self.tex.gl.ActiveTexture(gl::TEXTURE0 + self.index);
