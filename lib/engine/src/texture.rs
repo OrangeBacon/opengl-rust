@@ -83,14 +83,14 @@ impl Texture {
     }
 }
 
-struct GlTexture {
+pub struct GlTexture {
     gl: gl::Gl,
     id: GLuint,
 }
 
 impl GlTexture {
-    fn new(gl: &gl::Gl, image: &Texture, index: GLuint) -> Self {
-        let sampler = image.sampler();
+    pub fn new(gl: &gl::Gl, tex: &Texture, index: GLuint) -> Self {
+        let sampler = tex.sampler();
 
         let mut texture = 0;
         unsafe {
@@ -107,12 +107,12 @@ impl GlTexture {
                 gl::TEXTURE_2D,
                 0,
                 gl::RGB as _,
-                image.width() as _,
-                image.height() as _,
+                tex.width() as _,
+                tex.height() as _,
                 0,
                 gl::RGB,
                 gl::UNSIGNED_BYTE,
-                image.img_ptr() as _,
+                tex.img_ptr() as _,
             );
 
             gl.GenerateMipmap(gl::TEXTURE_2D);

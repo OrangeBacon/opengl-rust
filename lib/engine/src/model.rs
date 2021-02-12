@@ -9,6 +9,7 @@ use anyhow::Result;
 use gl::types::{GLenum, GLsizei};
 use nalgebra_glm as glm;
 use slotmap::{DefaultKey, SlotMap};
+use texture::GlTexture;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -101,7 +102,7 @@ pub struct Model {
 
     textures: Vec<Texture>,
 
-    pub(crate) model: gltf::Model,
+    pub(crate) gltf: gltf::Model,
 }
 
 impl Model {
@@ -147,7 +148,7 @@ impl Model {
         Ok(Model {
             buffers,
             scenes,
-            model: gltf,
+            gltf,
             textures,
         })
     }
@@ -203,9 +204,9 @@ impl Model {
     ) -> Result<Texture, Error> {
         let default = gltf::Sampler::default();
         let sampler = if let Some(idx) = tex.sampler {
-            gltf.samplers[idx]
+            &gltf.samplers[idx]
         } else {
-            default
+            &default
         };
 
         let sampler = texture::Sampler {
@@ -223,53 +224,6 @@ impl Model {
 
         Ok(tex)
     }
-    /*
-    pub(crate) fn load_accessor(
-        &self,
-        gl: &gl::Gl,
-        accessor: &gltf::Accessor,
-        index: u32,
-    ) -> Result<(), Error> {
-        let max_len = self.model.buffer_views.len();
-
-        let buf = self
-            .model
-            .buffer_views
-            .get(accessor.buffer_view)
-            .ok_or_else(|| Error::BadIndex {
-                array: "buffer views",
-                got: accessor.buffer_view,
-                max: max_len,
-            })?;
-
-        if let Some(ref buf) = buf.buf {
-            if buf.buffer_type != gltf::BufferViewTarget::ArrayBuffer as u32 {
-                return Ok(());
-            }
-        }
-
-        buf.bind();
-
-        unsafe {
-            gl.VertexAttribPointer(
-                index,
-                accessor.r#type.component_count(),
-                accessor.component_type.get_gl_type(),
-                gl::FALSE,
-                buf.stride,
-                accessor.byte_offset as _,
-            );
-            gl.EnableVertexAttribArray(index);
-        }
-
-        buf.unbind();
-
-        Ok(())
-    }
-
-    pub fn render(&self, gl: &gl::Gl, proj: &glm::Mat4, view: &glm::Mat4) {
-        self.scenes[0].render(self, gl, proj, view);
-    }*/
 }
 
 #[derive(Debug)]
@@ -334,12 +288,6 @@ impl Scene {
 
         Ok(Scene { root_nodes, nodes })
     }
-/*
-    fn render(&self, model: &Model, gl: &gl::Gl, proj: &glm::Mat4, view: &glm::Mat4) {
-        for node_id in &self.root_nodes {
-            self.nodes[*node_id].render(model, self, gl, proj, view);
-        }
-    }*/
 }
 
 #[derive(Debug, Default)]
@@ -418,51 +366,172 @@ impl Node {
 
         Ok(translation * rotation * scale)
     }
-    /*
-    fn render(
+}
+
+/// The state required to store the opengl state created from a model
+pub struct GLModel {
+    views: Vec<GLBuffer>,
+    meshes: Vec<GLMesh>,
+    textures: Vec<GlTexture>,
+}
+
+impl GLModel {
+    pub fn new(model: &Model, gl: &gl::Gl) -> Result<Self> {
+        let views: Vec<_> = model
+            .gltf
+            .buffer_views
+            .iter()
+            .map(|view| GLBuffer::new(view, model, gl))
+            .collect();
+
+        let meshes = model
+            .gltf
+            .meshes
+            .iter()
+            .map(|mesh| GLMesh::new(gl, &views, mesh, model))
+            .collect::<Result<_, _>>()?;
+
+        let textures = model
+            .textures
+            .iter()
+            .map(|tex| GlTexture::new(gl, tex, 0))
+            .collect();
+
+        Ok(Self {
+            views,
+            meshes,
+            textures,
+        })
+    }
+
+    pub fn render(&self, model: &Model, gl: &gl::Gl, proj: &glm::Mat4, view: &glm::Mat4) {
+        let scene_idx = model.gltf.scene.unwrap_or(0);
+        let scene = &model.scenes[scene_idx];
+
+        for node_idx in &scene.root_nodes {
+            let node = &scene.nodes[*node_idx];
+            self.render_node(node, scene, model, gl, proj, view);
+        }
+    }
+
+    fn render_node(
         &self,
-        model: &Model,
+        node: &Node,
         scene: &Scene,
+        model: &Model,
         gl: &gl::Gl,
         proj: &glm::Mat4,
         view: &glm::Mat4,
     ) {
-        if let Some(id) = self.mesh_id {
-            model.meshes[id].render(model, gl, &self.global_matrix, proj, view);
+        if let Some(id) = node.mesh_id {
+            self.meshes[id].render(model, self, gl, &node.global_matrix, proj, view);
         }
 
-        for child in &self.children {
-            scene.nodes[*child].render(model, scene, gl, proj, view);
+        for child in &node.children {
+            let node = &scene.nodes[*child];
+            self.render_node(node, scene, model, gl, proj, view)
         }
-    }*/
+    }
+
+    pub(crate) fn load_accessor(
+        gl: &gl::Gl,
+        buf: &GLBuffer,
+        accessor: &gltf::Accessor,
+        index: u32,
+    ) -> Result<(), Error> {
+        if let Some(ref buf) = buf.buf {
+            if buf.buffer_type != gltf::BufferViewTarget::ArrayBuffer as u32 {
+                return Ok(());
+            }
+        }
+
+        buf.buf().bind();
+
+        unsafe {
+            gl.VertexAttribPointer(
+                index,
+                accessor.r#type.component_count(),
+                accessor.component_type.get_gl_type(),
+                gl::FALSE,
+                buf.stride,
+                accessor.byte_offset as _,
+            );
+            gl.EnableVertexAttribArray(index);
+        }
+
+        buf.buf().unbind();
+
+        Ok(())
+    }
+}
+
+pub struct GLBuffer {
+    buf: Option<buffer::Buffer>,
+    stride: i32,
+}
+
+impl GLBuffer {
+    fn new(view: &gltf::BufferView, model: &Model, gl: &gl::Gl) -> Self {
+        let target = if let Some(t) = view.target {
+            t
+        } else {
+            return Self {
+                buf: None,
+                stride: view.byte_stride.unwrap_or_default(),
+            };
+        };
+
+        let buffer = &model.buffers[view.buffer];
+        let data = &buffer.data[view.byte_offset..(view.byte_offset + view.byte_length)];
+
+        let buf = buffer::Buffer::new(gl, target as _);
+        buf.bind();
+        buf.static_draw_data(data);
+        buf.unbind();
+
+        GLBuffer {
+            buf: Some(buf),
+            stride: view.byte_stride.unwrap_or_default(),
+        }
+    }
+
+    fn buf(&self) -> &buffer::Buffer {
+        self.buf.as_ref().unwrap()
+    }
 }
 
 #[derive(Debug)]
-pub struct GlMesh {
+pub struct GLMesh {
     prims: Vec<GlPrim>,
 }
 
-impl GlMesh {
-    fn load(gl: &gl::Gl, mesh: &gltf::Mesh, model: &Model) -> Result<Self, Error> {
+impl GLMesh {
+    fn new(
+        gl: &gl::Gl,
+        buffers: &[GLBuffer],
+        mesh: &gltf::Mesh,
+        model: &Model,
+    ) -> Result<Self, Error> {
         let prims = mesh
             .primitives
             .iter()
-            .map(|prim| GlPrim::load(gl, prim, model))
+            .map(|prim| GlPrim::new(gl, prim, model, buffers))
             .collect::<Result<_, _>>()?;
 
-        Ok(GlMesh { prims })
+        Ok(GLMesh { prims })
     }
 
     fn render(
         &self,
         model: &Model,
+        gl_state: &GLModel,
         gl: &gl::Gl,
         model_mat: &glm::Mat4,
         proj: &glm::Mat4,
         view: &glm::Mat4,
     ) {
         for prim in &self.prims {
-            prim.render(model, gl, model_mat, proj, view);
+            prim.render(model, gl, gl_state, model_mat, proj, view);
         }
     }
 }
@@ -478,18 +547,23 @@ pub struct GlPrim {
 }
 
 impl GlPrim {
-    fn load(gl: &gl::Gl, prim: &gltf::Primitive, model: &Model) -> Result<Self, Error> {
+    fn new(
+        gl: &gl::Gl,
+        prim: &gltf::Primitive,
+        model: &Model,
+        buffers: &[GLBuffer],
+    ) -> Result<Self, Error> {
         let vao = buffer::VertexArray::new(gl);
 
         vao.bind();
 
-        let count = DynamicShader::set_attribs(gl, prim, model)?;
+        let count = DynamicShader::set_attribs(gl, buffers, prim, model)?;
         let shader = DynamicShader::new(gl, prim, model)?;
 
         vao.unbind();
 
         let base_color = if let Some(mat) = prim.material {
-            let mat = &model.model.materials[mat];
+            let mat = &model.gltf.materials[mat];
             if let Some(pbr) = &mat.pbr_metallic_roughness {
                 if let Some(color) = &pbr.base_color_texture {
                     Some(color.index)
@@ -517,6 +591,7 @@ impl GlPrim {
         &self,
         model: &Model,
         gl: &gl::Gl,
+        gl_state: &GLModel,
         model_mat: &glm::Mat4,
         proj: &glm::Mat4,
         view: &glm::Mat4,
@@ -527,7 +602,7 @@ impl GlPrim {
         shader.bind_matrix("model", *model_mat);
 
         let _tex = if let Some(idx) = self.base_color {
-            let tex = model.textures[idx].bind(idx as _);
+            let tex = gl_state.textures[idx].bind(idx as _);
             shader.bind_texture("baseColor", &tex);
             Some(tex)
         } else {
@@ -537,11 +612,11 @@ impl GlPrim {
         self.vao.bind();
 
         if let Some(ebo_idx) = self.ebo {
-            let access = &model.model.accessors[ebo_idx];
-            let view_idx = access.buffer_view;
-            let view = &model.model.buffer_views[view_idx];
+            let access = &model.gltf.accessors[ebo_idx];
+            let view_idx = access.buffer_view.unwrap();
+            let view = &model.gltf.buffer_views[view_idx];
             let buffer_idx = view.buffer;
-            let buffer = &model.buffer_views[buffer_idx];
+            let buffer = &gl_state.views[buffer_idx].buf();
             buffer.bind();
 
             let r#type = access.component_type.get_gl_type();
@@ -565,6 +640,3 @@ impl GlPrim {
         self.vao.unbind();
     }
 }
-
-/// The state required to store the opengl state created from a model
-pub struct GLModel {}

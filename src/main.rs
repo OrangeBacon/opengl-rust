@@ -1,7 +1,7 @@
 use anyhow::Result;
 use engine::{
     data, gl, glm,
-    model::Model,
+    model::{GLModel, Model},
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
     Camera, EngineState, EventResult, Layer, MainLoop,
@@ -23,6 +23,7 @@ struct Vertex {
 struct Triangle {
     camera: Camera,
     model: Model,
+    gl_data: GLModel,
 }
 
 impl Triangle {
@@ -41,7 +42,7 @@ impl Triangle {
 
         let res = Resources::from_path(&folder);
 
-        let mut model = match Model::from_res(&res, file) {
+        let model = match Model::from_res(&res, file) {
             Ok(model) => model,
             Err(e) => {
                 println!("error: {}", e);
@@ -49,8 +50,8 @@ impl Triangle {
             }
         };
 
-        match model.load_vram(gl) {
-            Ok(_) => (),
+        self.gl_data = match GLModel::new(&model, gl) {
+            Ok(g) => g,
             Err(e) => {
                 println!("error {}", e);
                 return None;
@@ -67,8 +68,8 @@ impl Layer for Triangle {
     fn new(state: &EngineState) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
 
-        let mut model = Model::from_res(&res, "sea_keep_lonely_watcher/scene.gltf")?;
-        model.load_vram(&state.gl)?;
+        let model = Model::from_res(&res, "sea_keep_lonely_watcher/scene.gltf")?;
+        let gl_data = GLModel::new(&model, &state.gl)?;
 
         let (width, height) = state.window.size();
 
@@ -81,6 +82,7 @@ impl Layer for Triangle {
 
         Ok(Triangle {
             model,
+            gl_data,
             camera: Camera::new(),
         })
     }
@@ -129,7 +131,7 @@ impl Layer for Triangle {
 
         let (width, height) = state.window.size();
 
-        let projection = glm::perspective(
+        let proj = glm::perspective(
             width as f32 / height as f32,
             self.camera.get_fov(),
             0.1,
@@ -138,7 +140,7 @@ impl Layer for Triangle {
 
         let view = self.camera.get_view();
 
-        self.model.render(&state.gl, &projection, &view);
+        self.gl_data.render(&self.model, &state.gl, &proj, &view);
     }
 }
 

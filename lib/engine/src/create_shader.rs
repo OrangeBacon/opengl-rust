@@ -2,7 +2,12 @@ use std::ffi::CString;
 
 use gltf::Type;
 
-use crate::{gltf, model::Error, model::Model, Program, Shader};
+use crate::{
+    gltf,
+    model::Error,
+    model::{GLBuffer, GLModel, Model},
+    Program, Shader,
+};
 
 pub struct DynamicShader;
 
@@ -37,7 +42,12 @@ impl DynamicShader {
         Ok(program)
     }
 
-    pub fn set_attribs(gl: &gl::Gl, prim: &gltf::Primitive, model: &Model) -> Result<usize, Error> {
+    pub fn set_attribs(
+        gl: &gl::Gl,
+        buffers: &[GLBuffer],
+        prim: &gltf::Primitive,
+        model: &Model,
+    ) -> Result<usize, Error> {
         if !prim.attributes.contains_key("POSITION") {
             return Err(Error::NoPositions);
         }
@@ -46,7 +56,7 @@ impl DynamicShader {
             .attributes
             .iter()
             .enumerate()
-            .map(|(idx, (_, &attr))| Self::attrib(gl, model, attr, idx as u32))
+            .map(|(idx, (_, &attr))| Self::attrib(gl, buffers, model, attr, idx as u32))
             .collect::<Result<Vec<_>, _>>()?;
 
         let zero = counts[0];
@@ -60,17 +70,32 @@ impl DynamicShader {
         }
     }
 
-    fn attrib(gl: &gl::Gl, model: &Model, attr: i32, index: u32) -> Result<usize, Error> {
+    fn attrib(
+        gl: &gl::Gl,
+        buffers: &[GLBuffer],
+        model: &Model,
+        attr: i32,
+        index: u32,
+    ) -> Result<usize, Error> {
         let accessor = model
-            .model
+            .gltf
             .accessors
             .get(attr as usize)
             .ok_or_else(|| Error::BadIndex {
                 array: "accessors",
-                max: model.model.accessors.len(),
+                max: model.gltf.accessors.len(),
                 got: attr as usize,
             })?;
-        model.load_accessor(gl, accessor, index)?;
+
+        let buf = accessor.buffer_view.ok_or_else(|| Error::NoSource)?;
+
+        let buf = buffers.get(buf).ok_or_else(|| Error::BadIndex {
+            array: "views",
+            max: buffers.len(),
+            got: buf,
+        })?;
+
+        GLModel::load_accessor(gl, buf, accessor, index)?;
 
         Ok(accessor.count)
     }
@@ -194,7 +219,7 @@ impl Attribute {
         match self.kind {
             AttributeType::Position => Some("vec3"),
             AttributeType::Color(_) => {
-                if model.model.accessors[self.accessor_idx].r#type == Type::Vec3 {
+                if model.gltf.accessors[self.accessor_idx].r#type == Type::Vec3 {
                     Some("vec3")
                 } else {
                     Some("vec4")
@@ -226,7 +251,7 @@ impl Attribute {
     fn interface(&self, prim: &gltf::Primitive, model: &Model) -> Option<&'static str> {
         match self.kind {
             AttributeType::Color(_) => {
-                if model.model.accessors[self.accessor_idx].r#type == Type::Vec3 {
+                if model.gltf.accessors[self.accessor_idx].r#type == Type::Vec3 {
                     Some("vec3")
                 } else {
                     Some("vec4")
@@ -283,7 +308,7 @@ impl Attribute {
     fn out(&self, prim: &gltf::Primitive, model: &Model) -> Option<String> {
         match self.kind {
             AttributeType::Color(_) => {
-                if model.model.accessors[self.accessor_idx].r#type == Type::Vec3 {
+                if model.gltf.accessors[self.accessor_idx].r#type == Type::Vec3 {
                     Some(format!("vec4(IN.{}, 1.0)", self.variable()))
                 } else {
                     Some(format!("IN.{}", self.variable()))
@@ -303,7 +328,7 @@ impl Attribute {
 
 fn is_base_color(prim: &gltf::Primitive, model: &Model, idx: usize) -> bool {
     if let Some(mat) = prim.material {
-        let mat = &model.model.materials[mat];
+        let mat = &model.gltf.materials[mat];
         if let Some(pbr) = &mat.pbr_metallic_roughness {
             if let Some(color) = &pbr.base_color_texture {
                 if color.tex_coord == idx {
