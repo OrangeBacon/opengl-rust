@@ -544,6 +544,7 @@ pub struct GlPrim {
     count: usize,
     shader: Program,
     base_color: Option<usize>,
+    culling: bool,
 }
 
 impl GlPrim {
@@ -562,8 +563,13 @@ impl GlPrim {
 
         vao.unbind();
 
-        let base_color = if let Some(mat) = prim.material {
-            let mat = &model.gltf.materials[mat];
+        let mat = if let Some(mat) = prim.material {
+            Some(&model.gltf.materials[mat])
+        } else {
+            None
+        };
+
+        let base_color = if let Some(mat) = mat {
             if let Some(pbr) = &mat.pbr_metallic_roughness {
                 if let Some(color) = &pbr.base_color_texture {
                     Some(color.index)
@@ -584,6 +590,7 @@ impl GlPrim {
             ebo: prim.indices,
             mode: prim.mode.to_gl_enum(),
             shader,
+            culling: !mat.map(|a| a.double_sided).unwrap_or(false),
         })
     }
 
@@ -608,6 +615,13 @@ impl GlPrim {
         } else {
             None
         };
+
+        if self.culling {
+            unsafe {
+                gl.Enable(gl::CULL_FACE);
+                gl.CullFace(gl::BACK);
+            }
+        }
 
         self.vao.bind();
 
@@ -634,6 +648,12 @@ impl GlPrim {
         } else {
             unsafe {
                 gl.DrawArrays(self.mode, 0, self.count as i32);
+            }
+        }
+
+        if self.culling {
+            unsafe {
+                gl.Disable(gl::CULL_FACE);
             }
         }
 
