@@ -8,6 +8,7 @@ use crate::{window::scancode, EngineState};
 /// Allows flying in any direction, is not bound to any plane.
 /// No roll implemented. Scroll wheel to zoom in, wasd to move, mouse to chenge
 /// direction
+#[derive(Debug)]
 pub struct Camera {
     /// current camera position
     pos: glm::Vec3,
@@ -48,7 +49,7 @@ impl Camera {
     pub fn new() -> Self {
         let up = glm::vec3(0.0, 1.0, 0.0);
         let mut ret = Self {
-            pos: glm::vec3(150.0, 150.0, 150.0),
+            pos: glm::vec3(0.0, 0.0, 0.0),
             front: glm::vec3(0.0, 0.0, -1.0),
             right: glm::vec3(0.0, 0.0, 0.0),
             up: up,
@@ -143,5 +144,16 @@ impl Camera {
         // update the direction vectors based upon the new camera location
         self.right = glm::normalize(&glm::cross(&self.front, &self.world_up));
         self.up = glm::normalize(&glm::cross(&self.right, &self.front));
+    }
+
+    pub fn set_pos(&mut self, pos: &glm::Vec3) {
+        *self = Self::new();
+        self.pos = *pos;
+
+        self.update_vectors();
+    }
+
+    pub fn set_speed(&mut self, speed: f32) {
+        self.movement_speed = speed;
     }
 }

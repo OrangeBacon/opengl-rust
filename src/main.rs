@@ -27,7 +27,7 @@ struct Triangle {
 }
 
 impl Triangle {
-    fn swap_model(&mut self, gl: &gl::Gl) -> Option<()> {
+    fn swap_model(&mut self, state: &mut EngineState) -> Option<()> {
         let result = FileDialog::new()
             .add_filter("glTF Model", &["gltf", "glb"])
             .show_open_single_file();
@@ -50,7 +50,7 @@ impl Triangle {
             }
         };
 
-        self.gl_data = match GLModel::new(&model, gl) {
+        self.gl_data = match GLModel::new(&model, &state.gl) {
             Ok(g) => g,
             Err(e) => {
                 println!("error {}", e);
@@ -59,8 +59,25 @@ impl Triangle {
         };
 
         self.model = model;
+        self.set_cam_pos();
 
         Some(())
+    }
+
+    fn set_cam_pos(&mut self) {
+        let bound = self.model.get_bounds();
+
+        self.camera.set_pos(&glm::vec3(
+            (bound.max_x + bound.min_x) / 2.0,
+            (bound.max_y + bound.min_y) / 2.0,
+            bound.max_z * 2.0,
+        ));
+
+        let x = bound.max_x - bound.min_x;
+        let y = bound.max_y - bound.min_y;
+        let z = bound.max_z - bound.min_z;
+
+        self.camera.set_speed(x.min(y).min(z) / 5.0)
     }
 }
 
@@ -80,11 +97,15 @@ impl Layer for Triangle {
             //state.gl.PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
         }
 
-        Ok(Triangle {
+        let mut this = Triangle {
             model,
             gl_data,
             camera: Camera::new(),
-        })
+        };
+
+        this.set_cam_pos();
+
+        Ok(this)
     }
 
     fn handle_event(&mut self, state: &mut EngineState, event: &Event) -> EventResult {
@@ -113,7 +134,7 @@ impl Layer for Triangle {
             Event::KeyDown {
                 key: Scancode::O, ..
             } => {
-                self.swap_model(&state.gl);
+                self.swap_model(state);
                 EventResult::Handled
             }
             _ => EventResult::Ignored,

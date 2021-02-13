@@ -243,12 +243,12 @@ pub struct Accessor {
     /// If this is a sparse accessor, the values should be from after the
     /// sparse accessor is applied.
     #[serde(default)]
-    pub max: Vec<f64>,
+    pub max: Vec<f32>,
 
     /// The minimum value of each component.  See the maximim value for more
     /// information about its value.
     #[serde(default)]
-    pub min: Vec<f64>,
+    pub min: Vec<f32>,
 
     /// If the data in this accessor is sparse, then this is describing it
     pub sparse: Option<SparseAccessor>,

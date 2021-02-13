@@ -1,4 +1,5 @@
 use crate::{
+    bound::Bounds,
     buffer, gltf,
     resources::{Error as ResourceError, Resources},
     texture,
@@ -85,11 +86,6 @@ pub enum Error {
 
     #[error("Could not get root path of scene: path = \"{inner}\"")]
     RootPath { inner: String },
-}
-
-pub struct ModelShaders {
-    pub plain: Program,
-    pub color: Program,
 }
 
 /// A 3d gltf model, including all its data.  Not dependant upon any rendering
@@ -223,6 +219,17 @@ impl Model {
             Texture::load_from_bytes(data, sampler).map_err(|e| Error::Texture { inner: e })?;
 
         Ok(tex)
+    }
+
+    pub fn get_bounds(&self) -> Bounds {
+        let mut bound = Bounds::new_nan();
+        let scene = &self.scenes[0];
+
+        for node in &scene.root_nodes {
+            bound.merge(&scene.nodes[*node].get_bounds(&scene.nodes, &self.gltf));
+        }
+
+        bound
     }
 }
 
@@ -365,6 +372,33 @@ impl Node {
         let scale = glm::scale(&matrix, &glm::Vec3::from(scale));
 
         Ok(translation * rotation * scale)
+    }
+
+    fn get_bounds(&self, nodes: &SlotMap<DefaultKey, Node>, model: &gltf::Model) -> Bounds {
+        let mut bound = Bounds::new_nan();
+
+        if let Some(mesh) = self.mesh_id {
+            let mesh = &model.meshes[mesh];
+
+            for prim in &mesh.primitives {
+                if let Some(&pos) = prim.attributes.get("POSITION") {
+                    let pos = &model.accessors[pos as usize];
+                    bound.merge(
+                        &Bounds::from_slice(&pos.min, &pos.max).apply_mat(&self.local_matrix),
+                    );
+                }
+            }
+        }
+
+        for node in &self.children {
+            bound.merge(
+                &nodes[*node]
+                    .get_bounds(nodes, model)
+                    .apply_mat(&self.local_matrix),
+            );
+        }
+
+        bound
     }
 }
 
