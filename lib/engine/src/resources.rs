@@ -2,13 +2,22 @@ use std::{
     ffi, fs,
     io::{self, Read},
     path::{Path, PathBuf},
+    string::FromUtf8Error,
 };
 use thiserror::Error;
 
+use crate::data_uri::{self, DataURI};
+
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("File system error")]
+    #[error("File system error: {0}")]
     Io(#[from] io::Error),
+
+    #[error("Error encoding utf8: {0}")]
+    UTF8(#[from] FromUtf8Error),
+
+    #[error("Data Uri error: {0}")]
+    DataUri(#[from] data_uri::Error),
 
     #[error("File loaded contains null byte")]
     FileContainsNil,
@@ -54,10 +63,7 @@ impl Resources {
     }
 
     pub fn load_cstring(&self, resource_name: &str) -> Result<ffi::CString, Error> {
-        let mut file = fs::File::open(resource_name_to_path(&self.root_path, resource_name))?;
-
-        let mut buffer: Vec<u8> = Vec::with_capacity(file.metadata()?.len() as usize + 1);
-        file.read_to_end(&mut buffer)?;
+        let buffer = self.load_bytes(resource_name)?;
 
         if buffer.iter().any(|i| *i == 0) {
             return Err(Error::FileContainsNil);
@@ -69,15 +75,27 @@ impl Resources {
     }
 
     pub fn load_bytes(&self, resource_name: &str) -> Result<Vec<u8>, Error> {
-        let mut file = fs::File::open(resource_name_to_path(&self.root_path, resource_name))?;
+        let buffer = if DataURI::is_data_uri(resource_name) {
+            let uri = DataURI::new(resource_name)?;
+            uri.get_data()?
+        } else {
+            let mut file = fs::File::open(resource_name_to_path(&self.root_path, resource_name))?;
 
-        let mut buffer: Vec<u8> = Vec::with_capacity(file.metadata()?.len() as usize + 1);
-        file.read_to_end(&mut buffer)?;
+            let mut buffer: Vec<u8> = Vec::with_capacity(file.metadata()?.len() as usize + 1);
+            file.read_to_end(&mut buffer)?;
+
+            buffer
+        };
 
         Ok(buffer)
     }
 
     pub fn load_string(&self, resource_name: &str) -> Result<String, Error> {
+        if DataURI::is_data_uri(resource_name) {
+            let uri = DataURI::new(resource_name)?;
+            return Ok(String::from_utf8(uri.get_data()?)?);
+        }
+
         let file = fs::read_to_string(resource_name_to_path(&self.root_path, resource_name))?;
 
         Ok(file)

@@ -9,6 +9,8 @@ pub mod scene;
 pub mod texture;
 pub mod window;
 
+mod data_uri;
+
 mod shader;
 pub use shader::{Error, Program, Shader};
 
