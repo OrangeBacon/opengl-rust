@@ -3,7 +3,6 @@ use std::{
     str::{self, Utf8Error},
 };
 
-use anyhow::Result;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -64,8 +63,6 @@ impl DataURI {
     }
 
     pub fn get_data(&self) -> Result<Vec<u8>, Error> {
-        println!("{:#?}", self);
-
         if self.is_base_64 {
             Self::get_base64(&self.data)
         } else {

@@ -86,6 +86,12 @@ pub enum Error {
 
     #[error("Could not get root path of scene: path = \"{inner}\"")]
     RootPath { inner: String },
+
+    #[error("Multiple types required for buffer view")]
+    BufferViewType,
+
+    #[error("Unable to infer bufferview type")]
+    BufferViewNoInference,
 }
 
 /// A 3d gltf model, including all its data.  Not dependant upon any rendering
@@ -97,6 +103,8 @@ pub struct Model {
     buffers: Vec<Buffer>,
 
     textures: Vec<Texture>,
+
+    buffer_view_types: Vec<BufferViewType>,
 
     pub(crate) gltf: gltf::Model,
 }
@@ -141,11 +149,14 @@ impl Model {
             .map(|scene| Scene::new(scene, &gltf))
             .collect::<Result<_, _>>()?;
 
+        let buffer_view_types = BufferViewType::derive_types(&gltf)?;
+
         Ok(Model {
             buffers,
             scenes,
             gltf,
             textures,
+            buffer_view_types,
         })
     }
 
@@ -230,6 +241,179 @@ impl Model {
         }
 
         bound
+    }
+}
+
+/// How a buffer view is going to be used in the model
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BufferViewType {
+    /// No usage found for the buffer view
+    None,
+
+    /// The buffer view is needed on the CPU, possibly a texture to decode
+    CPUBuffer,
+
+    /// The buffer view is needed as an OpenGL ArrayBuffer or equivalent.
+    /// E.g. vertex attributes
+    ArrayBuffer,
+
+    /// The buffer view is needed as an OpenGL ElementArrayBuffer or
+    /// equivalent. E.g. vertex indicies for DrawElements
+    ElementArrayBuffer,
+}
+
+/// As the methods in here are called on load, rather than on render, they
+/// need to use checked array access so the program does not crash if
+/// a bad model is loaded.
+impl BufferViewType {
+    /// Attempt to derive all the buffer view types for a gltf model.
+    /// Errors if multiple types are derived for one buffer view or if no type
+    /// is derived for the buffer view.  The latter usually indicates that that
+    /// part of the specification hasn't been implemented yet.
+    fn derive_types(model: &gltf::Model) -> Result<Vec<Self>, Error> {
+        let mut types = vec![Self::None; model.buffer_views.len()];
+
+        // derive mesh primative types
+        for mesh in &model.meshes {
+            for prim in &mesh.primitives {
+                Self::derive_prim(prim, model, &mut types)?;
+            }
+        }
+
+        // Set image buffers to CPU usage only
+        for image in &model.images {
+            if let Some(view) = image.buffer_view {
+                let view = types.get_mut(view).ok_or_else(|| Error::BadIndex {
+                    array: "buffer views",
+                    got: view,
+                    max: model.buffer_views.len(),
+                })?;
+
+                Self::set_view(view, Self::CPUBuffer)?;
+            }
+        }
+
+        // Some buffer views have a buffer type specified in the model format,
+        // verify that the provided type matches the infered type or if no
+        // type infered, take the type provided.  The last point is why this is
+        // required, not a verification step.
+        for (idx, view) in model.buffer_views.iter().enumerate() {
+            if let Some(target) = view.target {
+                let view_type = match target {
+                    gltf::BufferViewTarget::ElementArrayBuffer => Self::ElementArrayBuffer,
+                    gltf::BufferViewTarget::ArrayBuffer => Self::ArrayBuffer,
+                };
+
+                let view = types.get_mut(idx).ok_or_else(|| Error::BadIndex {
+                    array: "buffer views",
+                    got: idx,
+                    max: model.buffer_views.len(),
+                })?;
+
+                Self::set_view(view, view_type)?;
+            }
+        }
+
+        // count the number of not-infered buffers
+        let none_count = types.iter().filter(|&&x| x == Self::None).count();
+
+        if none_count > 0 {
+            return Err(Error::BufferViewNoInference);
+        }
+
+        Ok(types)
+    }
+
+    /// Derive the types of buffer for a mesh primative
+    fn derive_prim(
+        prim: &gltf::Primitive,
+        model: &gltf::Model,
+        types: &mut [Self],
+    ) -> Result<(), Error> {
+        // set the vertex attributes to be array buffers
+        for (_, &attr_id) in &prim.attributes {
+            let accessor =
+                model
+                    .accessors
+                    .get(attr_id as usize)
+                    .ok_or_else(|| Error::BadIndex {
+                        array: "accessors",
+                        got: attr_id as usize,
+                        max: model.accessors.len(),
+                    })?;
+            Self::set_accessor(accessor, types, Self::ArrayBuffer)?;
+        }
+
+        // set the vertex indicies to be an element array buffer
+        if let Some(indicies) = prim.indices {
+            let accessor =
+                model
+                    .accessors
+                    .get(indicies as usize)
+                    .ok_or_else(|| Error::BadIndex {
+                        array: "accessors",
+                        got: indicies as usize,
+                        max: model.accessors.len(),
+                    })?;
+            Self::set_accessor(accessor, types, Self::ElementArrayBuffer)?;
+        }
+
+        Ok(())
+    }
+
+    /// Set the buffer views referenced by an accessor to have the buffer view
+    /// type passed in, or to be CPU buffers if referenced as part of a sparse
+    /// accessor.
+    fn set_accessor(accessor: &gltf::Accessor, types: &mut [Self], set: Self) -> Result<(), Error> {
+        // calculate length, required for errors due to get_mut + lifetimes
+        let type_len = types.len();
+
+        // Set the buffer view to the requested type, if the accessor has
+        // a buffer view
+        if let Some(view) = accessor.buffer_view {
+            let view = types.get_mut(view).ok_or(Error::BadIndex {
+                array: "buffer views",
+                got: view,
+                max: type_len,
+            })?;
+
+            Self::set_view(view, set)?;
+        }
+
+        // If there is a sparse accessor, set its views to be CPU buffers
+        if let Some(sparse) = &accessor.sparse {
+            let indicies = sparse.indices.buffer_view;
+            let view = types.get_mut(indicies).ok_or(Error::BadIndex {
+                array: "buffer views",
+                got: indicies,
+                max: type_len,
+            })?;
+
+            Self::set_view(view, Self::CPUBuffer)?;
+
+            let values = sparse.values.buffer_view;
+            let view = types.get_mut(values).ok_or(Error::BadIndex {
+                array: "buffer views",
+                got: values,
+                max: type_len,
+            })?;
+
+            Self::set_view(view, Self::CPUBuffer)?;
+        }
+
+        Ok(())
+    }
+
+    /// Try to set a view to have a provided type, if it already has a different
+    /// type, it will error.
+    fn set_view(view: &mut Self, set: Self) -> Result<(), Error> {
+        match view {
+            Self::None => *view = set,
+            _ if *view == set => (),
+            _ => return Err(Error::BufferViewType),
+        }
+
+        Ok(())
     }
 }
 
