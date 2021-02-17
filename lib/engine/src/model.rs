@@ -599,7 +599,8 @@ impl GLModel {
             .gltf
             .buffer_views
             .iter()
-            .map(|view| GLBuffer::new(view, model, gl))
+            .zip(model.buffer_view_types.iter())
+            .map(|(view, &view_type)| GLBuffer::new(view, view_type, model, gl))
             .collect();
 
         let meshes = model
@@ -689,14 +690,19 @@ pub struct GLBuffer {
 }
 
 impl GLBuffer {
-    fn new(view: &gltf::BufferView, model: &Model, gl: &gl::Gl) -> Self {
-        let target = if let Some(t) = view.target {
-            t
-        } else {
-            return Self {
-                buf: None,
-                stride: view.byte_stride.unwrap_or_default(),
-            };
+    fn new(view: &gltf::BufferView, view_type: BufferViewType, model: &Model, gl: &gl::Gl) -> Self {
+        // if a GPU buffer is required, use the type of buffer infered for
+        // the buffer view as that takes into account the view's target
+        // if it exists
+        let target = match view_type {
+            BufferViewType::ArrayBuffer => gl::ARRAY_BUFFER,
+            BufferViewType::ElementArrayBuffer => gl::ELEMENT_ARRAY_BUFFER,
+            BufferViewType::CPUBuffer | BufferViewType::None => {
+                return Self {
+                    buf: None,
+                    stride: view.byte_stride.unwrap_or_default(),
+                };
+            }
         };
 
         let buffer = &model.buffers[view.buffer];

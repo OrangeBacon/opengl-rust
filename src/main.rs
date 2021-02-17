@@ -77,7 +77,9 @@ impl Triangle {
         let y = bound.max_y - bound.min_y;
         let z = bound.max_z - bound.min_z;
 
-        self.camera.set_speed(x.min(y).min(z) / 5.0)
+        // use max, not min so the camera can still move if one of the dimensions
+        // of the mesh is equal to 0
+        self.camera.set_speed(x.max(y).max(z) / 5.0)
     }
 }
 
