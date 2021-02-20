@@ -281,7 +281,7 @@ pub enum ComponentType {
 
 impl ComponentType {
     /// convert a type to the OpenGL enum value for the type
-    pub fn get_gl_type(&self) -> u32 {
+    pub fn gl_type(&self) -> u32 {
         use ComponentType::*;
 
         match self {
@@ -291,6 +291,19 @@ impl ComponentType {
             UnsignedShort => gl::UNSIGNED_SHORT,
             UnsignedInt => gl::UNSIGNED_INT,
             Float => gl::FLOAT,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        use ComponentType::*;
+
+        match self {
+            Byte => 1,
+            UnsignedByte => 1,
+            Short => 2,
+            UnsignedShort => 2,
+            UnsignedInt => 4,
+            Float => 4,
         }
     }
 }
@@ -311,7 +324,7 @@ pub enum Type {
 impl Type {
     /// Get the number of components, i.e individual numeric values in
     /// a value of this type.  E.g. Scalar => 1, Vec2 => 2, etc.
-    pub fn component_count(&self) -> i32 {
+    pub fn component_count(&self) -> usize {
         use Type::*;
 
         match self {
@@ -576,7 +589,7 @@ pub struct Buffer {
 }
 
 /// A view representing a subset of a buffer
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "camelCase")]
 pub struct BufferView {

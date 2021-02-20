@@ -1,3 +1,5 @@
+use std::{collections::HashMap, convert::TryInto};
+
 use crate::{
     bound::Bounds,
     buffer, gltf,
@@ -92,6 +94,15 @@ pub enum Error {
 
     #[error("Unable to infer bufferview type")]
     BufferViewNoInference,
+
+    #[error("Unable to use floats as sparce indicies")]
+    SparseFloat,
+
+    #[error("Malformed sparse indicies")]
+    SparseIndicies,
+
+    #[error("Unmatched sparse index to value count")]
+    SparseIndexValues,
 }
 
 /// A 3d gltf model, including all its data.  Not dependant upon any rendering
@@ -149,15 +160,18 @@ impl Model {
             .map(|scene| Scene::new(scene, &gltf))
             .collect::<Result<_, _>>()?;
 
-        let buffer_view_types = BufferViewType::derive_types(&gltf)?;
-
-        Ok(Model {
+        let mut model = Model {
             buffers,
             scenes,
             gltf,
             textures,
-            buffer_view_types,
-        })
+            buffer_view_types: vec![],
+        };
+
+        model.check_load_accessors()?;
+        model.buffer_view_types = BufferViewType::derive_types(&model.gltf)?;
+
+        Ok(model)
     }
 
     fn load_image(
@@ -242,6 +256,263 @@ impl Model {
 
         bound
     }
+
+    /// Try to apply all the sparse accessors to the model data, so the graphics
+    /// backend doesn't have to handle them
+    fn check_load_accessors(&mut self) -> Result<(), Error> {
+        // check each accessor to see if it is sparse
+        for accessor in &self.gltf.accessors {
+            let sparse = match &accessor.sparse {
+                Some(s) => s,
+                _ => continue,
+            };
+
+            // there isn't always a buffer view, if not present a buffer of
+            // zeros should be created to apply the sparse accessor to, so create
+            // a new buffer view and buffer to store this new data
+            let buffer_view = match accessor.buffer_view {
+                Some(idx) => idx,
+                None => {
+                    let size = accessor.component_type.size()
+                        * accessor.r#type.component_count()
+                        * accessor.count;
+                    self.buffers.push(Buffer {
+                        data: vec![0; size],
+                    });
+
+                    let view = gltf::BufferView {
+                        buffer: self.buffers.len() - 1,
+                        byte_length: size,
+                        byte_stride: None,
+                        byte_offset: 0,
+                        extensions: HashMap::default(),
+                        extras: serde_json::Value::Null,
+                        name: None,
+                        target: None,
+                    };
+
+                    self.gltf.buffer_views.push(view);
+
+                    self.gltf.buffer_views.len() - 1
+                }
+            };
+
+            let value_size = accessor.component_type.size() * accessor.r#type.component_count();
+
+            // get the indicies buffer view, then offset it with the infomation
+            // from the sparse accessor offsetting the data
+            let indicies = self.buffer_data(sparse.indices.buffer_view)?;
+            let indicies = indicies
+                .get(
+                    sparse.indices.byte_offset
+                        ..(sparse.indices.byte_offset
+                            + sparse.count * sparse.indices.component_type.size()),
+                )
+                .ok_or(Error::BadIndex {
+                    array: "Sparse indicies",
+                    got: sparse.indices.byte_offset + sparse.count,
+                    max: indicies.len(),
+                })?
+                .to_owned();
+
+            // get the valaues buffer view, then offset it with the infomation
+            // from the sparse accessor offsetting the data
+            let values = self.buffer_data(sparse.values.buffer_view)?.to_owned();
+            let values = values
+                .get(
+                    sparse.values.byte_offset
+                        ..(sparse.values.byte_offset + sparse.count * value_size),
+                )
+                .ok_or(Error::BadIndex {
+                    array: "Sparse values",
+                    got: sparse.values.byte_offset + sparse.count,
+                    max: indicies.len(),
+                })?
+                .to_owned();
+
+            // get the mutable data to be edited from the model
+            let data =
+                Self::buffer_data_mut(&self.gltf.buffer_views, &mut self.buffers, buffer_view)?;
+            let data_len = data.len();
+
+            // get the relevant portion of the data buffer
+            let data = data
+                .get_mut(accessor.byte_offset..(accessor.byte_offset + accessor.count * value_size))
+                .ok_or(Error::BadIndex {
+                    array: "Sparse accessor data",
+                    got: accessor.byte_offset + accessor.count,
+                    max: data_len,
+                })?;
+
+            // get the stride, if it is not present, assume the stride is the same
+            // as the value size.  If the code has run to this point, it
+            // is gauranteed that the relavant buffer view exists so don't
+            // need to check the access.
+            let stride = if let Some(v) = self.gltf.buffer_views[buffer_view].byte_stride {
+                v as usize
+            } else {
+                value_size
+            };
+
+            // macro to simplify generating the acessor processor for each possible
+            // index type
+            macro_rules! process {
+                ($convert:ty) => {
+                    process_accessor(
+                        // unwrap here is safe as process accessor will only call
+                        // this function with a slice that is the correct length
+                        |a| <$convert>::from_le_bytes(a.try_into().unwrap()) as usize,
+                        std::mem::size_of::<$convert>(),
+                        value_size,
+                        data,
+                        &indicies,
+                        &values,
+                        stride,
+                    )?
+                };
+            };
+
+            // dispatch the correct accessor process
+            match sparse.indices.component_type {
+                gltf::ComponentType::Byte => process!(i8),
+                gltf::ComponentType::UnsignedByte => process!(u8),
+                gltf::ComponentType::Short => process!(i16),
+                gltf::ComponentType::UnsignedShort => process!(u16),
+                gltf::ComponentType::UnsignedInt => process!(u32),
+                gltf::ComponentType::Float => return Err(Error::SparseFloat),
+            }
+        }
+
+        Ok(())
+    }
+
+    // try to get a reference to the data from a buffer view
+    fn buffer_data(&self, buffer_view: usize) -> Result<&[u8], Error> {
+        let view = self
+            .gltf
+            .buffer_views
+            .get(buffer_view)
+            .ok_or_else(|| Error::BadIndex {
+                array: "Buffer views",
+                got: buffer_view,
+                max: self.gltf.buffer_views.len(),
+            })?;
+
+        let buffer = self
+            .buffers
+            .get(view.buffer)
+            .ok_or_else(|| Error::BadIndex {
+                array: "Buffers",
+                got: view.buffer,
+                max: self.buffers.len(),
+            })?;
+
+        Ok(buffer
+            .data
+            .get(view.byte_offset..(view.byte_offset + view.byte_length))
+            .ok_or_else(|| Error::BadIndex {
+                array: "Buffer get",
+                got: view.byte_offset + view.byte_length,
+                max: buffer.data.len(),
+            })?)
+    }
+
+    // try to get the mutable data for a buffer view
+    // doesn't take self, instead takes slices so the borrows on self can be
+    // split to allow both mut and immutable references to parts of self
+    fn buffer_data_mut<'a>(
+        buffer_views: &[gltf::BufferView],
+        buffers: &'a mut [Buffer],
+        buffer_view: usize,
+    ) -> Result<&'a mut [u8], Error> {
+        let view = buffer_views
+            .get(buffer_view)
+            .ok_or_else(|| Error::BadIndex {
+                array: "Buffer views",
+                got: buffer_view,
+                max: buffer_views.len(),
+            })?;
+
+        let buffer_len = buffers.len();
+
+        let buffer = buffers.get_mut(view.buffer).ok_or(Error::BadIndex {
+            array: "Buffers",
+            got: view.buffer,
+            max: buffer_len,
+        })?;
+
+        let buffer_len = buffer.data.len();
+
+        Ok(buffer
+            .data
+            .get_mut(view.byte_offset..(view.byte_offset + view.byte_length))
+            .ok_or(Error::BadIndex {
+                array: "Buffer get",
+                got: view.byte_offset + view.byte_length,
+                max: buffer_len,
+            })?)
+    }
+}
+
+// process a single sparse accessor
+fn process_accessor<F>(
+    // a function that converts bytes to usize depending upon the type of
+    // indicies specified
+    to_usize: F,
+
+    // the number of bytes to pass to the to_usize function
+    idx_size: usize,
+
+    // number of bytes in each substituted value
+    value_size: usize,
+
+    // the data to apply the accessor to
+    data: &mut [u8],
+
+    // the indicies into the data to apply values at
+    indicies: &[u8],
+
+    // the values to be applied
+    values: &[u8],
+
+    // the stride of the data
+    stride: usize,
+) -> Result<(), Error>
+where
+    F: Fn(&[u8]) -> usize,
+{
+    if indicies.len() % idx_size != 0 {
+        return Err(Error::SparseIndicies);
+    }
+
+    if indicies.len() / idx_size != values.len() / value_size {
+        return Err(Error::SparseIndexValues);
+    }
+
+    let data_len = data.len();
+
+    let iter = indicies.chunks(idx_size).zip(values.chunks(value_size));
+
+    // loop through all possible sparse substitutions
+    for (idx, value) in iter {
+        let idx = to_usize(idx);
+        let byte_offset = stride * idx;
+
+        let data = data
+            .get_mut(byte_offset..(byte_offset + value_size))
+            .ok_or(Error::BadIndex {
+                array: "Sparse data",
+                got: byte_offset + value_size,
+                max: data_len,
+            })?;
+
+        // replace the data in the buffer
+        for (data, new) in data.iter_mut().zip(value) {
+            *data = *new;
+        }
+    }
+
+    Ok(())
 }
 
 /// How a buffer view is going to be used in the model
@@ -669,8 +940,8 @@ impl GLModel {
         unsafe {
             gl.VertexAttribPointer(
                 index,
-                accessor.r#type.component_count(),
-                accessor.component_type.get_gl_type(),
+                accessor.r#type.component_count() as _,
+                accessor.component_type.gl_type(),
                 gl::FALSE,
                 buf.stride,
                 accessor.byte_offset as _,
@@ -857,7 +1128,7 @@ impl GlPrim {
             let buffer = &gl_state.views[buffer_idx].buf();
             buffer.bind();
 
-            let r#type = access.component_type.get_gl_type();
+            let r#type = access.component_type.gl_type();
 
             unsafe {
                 gl.DrawElements(
