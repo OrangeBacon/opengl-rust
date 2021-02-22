@@ -55,6 +55,7 @@ impl MainLoop {
 
         let gl = window.new_gl_context()?;
 
+        #[cfg(debug_assertions)]
         enable_gl_debugging(&gl);
 
         Ok(MainLoop {

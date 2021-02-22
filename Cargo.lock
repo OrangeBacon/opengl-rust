@@ -323,7 +323,6 @@ dependencies = [
  "image",
  "imgui",
  "imgui-opengl-renderer",
- "imgui-sdl2",
  "indexmap",
  "nalgebra-glm",
  "sdl2",
@@ -495,16 +494,6 @@ checksum = "0c20454fc603c521420ebfd1c064d1660f41d58674f32994ccb01efa456784fe"
 dependencies = [
  "gl_generator 0.9.0",
  "imgui",
-]
-
-[[package]]
-name = "imgui-sdl2"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e5a575c7aca60d190b057afe9cb9ef46d2c2161eb6e7214fdc5ba9f097c20b"
-dependencies = [
- "imgui",
- "sdl2",
 ]
 
 [[package]]

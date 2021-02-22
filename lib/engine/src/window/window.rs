@@ -40,6 +40,9 @@ pub trait Window {
     /// try to create a new opengl context
     fn new_gl_context(&mut self) -> Result<gl::Gl>;
 
+    /// get a function that can be used as an opengl function loader
+    fn gl_loader(&self, name: &'static str) -> *const ::std::os::raw::c_void;
+
     /// try to get a new event from the windows active, if there are no events
     /// that need to be processed, it returns None
     fn event(&mut self) -> Option<Event>;
@@ -57,4 +60,16 @@ pub trait Window {
 
     /// Get the current size of the window being displayed
     fn size(&self) -> (u32, u32);
+
+    /// Get a setter and getter for thee clipboard
+    fn clipboard(&self) -> Box<dyn Clipboard>;
+}
+
+/// Wrapper around the system clipboard
+pub trait Clipboard {
+    /// try to get a string out of the clipboard
+    fn get(&mut self) -> Option<String>;
+
+    /// set the string stored by the clipboard
+    fn set(&mut self, data: &str);
 }

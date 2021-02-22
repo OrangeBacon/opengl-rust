@@ -3,10 +3,10 @@ use sdl2::{video::GLContext, VideoSubsystem};
 use thiserror::Error;
 
 use super::{
-    event::Event,
+    event::{Event, MouseButton, MouseButtonState},
     input::InputState,
     scancode::Scancode,
-    window::{Window, WindowConfig},
+    window::{Clipboard, Window, WindowConfig},
 };
 
 /// Error type used during initialisation of SDL2 - the default bindings only
@@ -103,9 +103,11 @@ impl Window for SdlWindow {
         self.gl_contexts.push(ctx);
 
         // Tell OpenGL where to find its functions
-        Ok(gl::Gl::load_with(|s| {
-            self.video.gl_get_proc_address(s) as _
-        }))
+        Ok(gl::Gl::load_with(|s| self.gl_loader(s)))
+    }
+
+    fn gl_loader(&self, name: &'static str) -> *const std::ffi::c_void {
+        self.video.gl_get_proc_address(name) as _
     }
 
     fn set_mouse_capture(&mut self, state: bool) {
@@ -163,6 +165,29 @@ impl Window for SdlWindow {
         // Get the pixel size of the window. Todo: wtf is dpi
         self.window.size()
     }
+
+    fn clipboard(&self) -> Box<dyn Clipboard> {
+        let clip = self.window.subsystem().clipboard();
+
+        Box::new(SdlClipboard(clip))
+    }
+}
+
+struct SdlClipboard(sdl2::clipboard::ClipboardUtil);
+
+impl Clipboard for SdlClipboard {
+    fn get(&mut self) -> Option<String> {
+        if self.0.has_clipboard_text() {
+            self.0.clipboard_text().ok()
+        } else {
+            None
+        }
+    }
+
+    fn set(&mut self, data: &str) {
+        // assume that the user doesn't care if setting the clipboard fails
+        let _ = self.0.set_clipboard_text(data);
+    }
 }
 
 /// Try to convert an sdl event into this engine's event type
@@ -196,12 +221,40 @@ fn event_from_sdl_event(event: &sdl2::event::Event) -> Option<Event> {
             key: convert_scancode(*scancode)?,
         }),
 
+        SdlEvent::MouseButtonDown { mouse_btn, .. } => Some(Event::MouseButton {
+            state: MouseButtonState::Pressed,
+            button: convert_mouse_button(*mouse_btn)?,
+        }),
+
+        SdlEvent::MouseButtonUp { mouse_btn, .. } => Some(Event::MouseButton {
+            state: MouseButtonState::Released,
+            button: convert_mouse_button(*mouse_btn)?,
+        }),
+
+        SdlEvent::TextInput { ref text, .. } => Some(Event::TextInput {
+            text: text.to_owned(),
+        }),
+
         SdlEvent::MouseWheel { x, y, .. } => Some(Event::Scroll { x: *x, y: *y }),
 
         SdlEvent::Quit { .. } => Some(Event::Quit),
 
         _ => None,
     }
+}
+
+fn convert_mouse_button(button: sdl2::mouse::MouseButton) -> Option<MouseButton> {
+    use sdl2::mouse::MouseButton as SdlMouse;
+    let val = match button {
+        SdlMouse::Left => MouseButton::Left,
+        SdlMouse::Right => MouseButton::Right,
+        SdlMouse::Middle => MouseButton::Middle,
+        SdlMouse::X1 => MouseButton::Four,
+        SdlMouse::X2 => MouseButton::Five,
+        SdlMouse::Unknown => return None,
+    };
+
+    Some(val)
 }
 
 /// convert between sdl scancodes and the engine's scancode
