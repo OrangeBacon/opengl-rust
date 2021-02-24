@@ -53,64 +53,85 @@ impl Layer for ImguiLayer {
         })
     }
 
-    fn handle_event(&mut self, _state: &mut EngineState, event: &Event) -> EventResult {
-        match event {
+    fn handle_event(&mut self, state: &mut EngineState, event: &Event) -> EventResult {
+        // based upon the keys currently help down, tell imgui about ctrl/shift/etc
+        let set_modifiers = |io: &mut imgui::Io| {
+            let inp = |key| state.inputs.is_key_pressed(key);
+            let ctrl = inp(Scancode::LeftControl) | inp(Scancode::RightControl);
+            let alt = inp(Scancode::LeftAlt) | inp(Scancode::RightAlt);
+            let shift = inp(Scancode::LeftShift) | inp(Scancode::RightShift);
+            let meta = inp(Scancode::LeftMeta) | inp(Scancode::RightMeta);
+
+            io.key_ctrl = ctrl;
+            io.key_alt = alt;
+            io.key_shift = shift;
+            io.key_super = meta;
+        };
+
+        let handled = match event {
             Event::Scroll { y, x, .. } => {
                 let io = self.context.io_mut();
                 io.mouse_wheel = *y as f32;
                 io.mouse_wheel_h = *x as f32;
-                EventResult::Handled
+                io.want_capture_mouse
             }
             Event::KeyDown { key } => {
                 let io = self.context.io_mut();
+                set_modifiers(io);
                 io.keys_down[*key as usize] = true;
-                if io.want_capture_keyboard {
-                    EventResult::Handled
-                } else {
-                    EventResult::Ignored
-                }
+                io.want_capture_keyboard
             }
             Event::KeyUp { key } => {
                 let io = self.context.io_mut();
+                set_modifiers(io);
                 io.keys_down[*key as usize] = false;
-                if io.want_capture_keyboard {
-                    EventResult::Handled
-                } else {
-                    EventResult::Ignored
-                }
+                io.want_capture_keyboard
             }
             Event::TextInput { ref text } => {
                 let io = self.context.io_mut();
                 for c in text.chars() {
                     io.add_input_character(c);
                 }
-                if io.want_capture_keyboard {
-                    EventResult::Handled
-                } else {
-                    EventResult::Ignored
-                }
+                io.want_capture_keyboard
             }
             Event::MouseButton { .. } => {
                 // mouse state handled in update/render, just check if it is used
                 let io = self.context.io();
-
-                if io.want_capture_mouse {
-                    EventResult::Handled
-                } else {
-                    EventResult::Ignored
-                }
+                io.want_capture_mouse
             }
 
-            Event::Resize { .. } | Event::FocusGained | Event::FocusLost | Event::Quit => {
-                EventResult::Ignored
-            }
+            Event::Resize { .. } | Event::FocusGained | Event::FocusLost | Event::Quit => false,
+        };
+
+        if handled {
+            EventResult::Handled
+        } else {
+            EventResult::Ignored
         }
     }
 
     // imgui does everything in the render function, no update needed
     fn update(&mut self, _state: &EngineState, _dt: f32) {}
 
-    fn render(&mut self, _state: &EngineState) {
+    fn render(&mut self, state: &EngineState) {
+        let io = self.context.io_mut();
+
+        let (w, h) = state.window.size();
+        io.display_size = [w as f32, h as f32];
+        // Todo: this makes imgui not dpi aware, fix this
+        io.display_framebuffer_scale = [1.0, 1.0];
+
+        io.mouse_down = [
+            state.inputs.mouse_left(),
+            state.inputs.mouse_right(),
+            state.inputs.mouse_middle(),
+            state.inputs.mouse_four(),
+            state.inputs.mouse_five(),
+        ];
+
+        let (x, y) = state.inputs.mouse_position();
+        io.mouse_pos = [x as f32, y as f32];
+
         let now = Instant::now();
         let delta = now - self.frame_time;
         let delta = delta.as_secs() as f32 + delta.subsec_nanos() as f32 / 1_000_000_000.0;

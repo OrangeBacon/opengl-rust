@@ -95,11 +95,11 @@ impl MainLoop {
 
             self.state.window.update_mouse(&mut self.state.inputs);
 
-            while let Some(event) = self.state.window.event() {
-                for layer in self.layers.iter_mut() {
+            'event: while let Some(event) = self.state.window.event() {
+                for layer in self.layers.iter_mut().rev() {
                     let res = layer.borrow_mut().handle_event(&mut self.state, &event);
                     match res {
-                        EventResult::Handled => break,
+                        EventResult::Handled => continue 'event,
                         EventResult::Exit => break 'main,
                         EventResult::Ignored => (),
                     }

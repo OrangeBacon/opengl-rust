@@ -99,15 +99,15 @@ impl Camera {
         if state.inputs.is_key_pressed(Scancode::LeftShift) {
             self.pos -= camera_speed * self.world_up;
         }
+        /*
+                // move the camera based upon mouse movement
+                let (x, y) = state.inputs.mouse_delta();
+                let x_offset = x as f32 * self.mouse_sensitivity;
+                let y_offset = y as f32 * self.mouse_sensitivity;
 
-        // move the camera based upon mouse movement
-        let (x, y) = state.inputs.mouse_delta();
-        let x_offset = x as f32 * self.mouse_sensitivity;
-        let y_offset = y as f32 * self.mouse_sensitivity;
-
-        self.yaw += x_offset;
-        self.pitch += y_offset;
-
+                self.yaw += x_offset;
+                self.pitch += y_offset;
+        */
         if self.pitch > 89.0 {
             self.pitch = 89.0
         }

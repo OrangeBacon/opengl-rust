@@ -120,11 +120,11 @@ impl Layer for Triangle {
             // fix issue with mouse movement being limited if the window loses
             // and regains focus
             Event::FocusGained => {
-                state.window.set_mouse_capture(true);
+                //state.window.set_mouse_capture(true);
                 EventResult::Handled
             }
             Event::FocusLost => {
-                state.window.set_mouse_capture(false);
+                //state.window.set_mouse_capture(false);
                 EventResult::Handled
             }
 
@@ -177,7 +177,7 @@ fn main() {
 fn run() -> Result<()> {
     let mut main_loop = MainLoop::new::<SdlWindow>()?;
     main_loop.add_layer::<Triangle>()?;
-    //main_loop.add_layer::<engine::imgui::ImguiLayer>()?;
+    main_loop.add_layer::<engine::imgui::ImguiLayer>()?;
 
     main_loop.run()?;
 
