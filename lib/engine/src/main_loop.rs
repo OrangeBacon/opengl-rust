@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::time::Instant;
 
 use crate::{
     window::{
@@ -27,10 +27,7 @@ pub struct EngineState {
 /// The main game storage, is used to call the main loop.
 pub struct MainLoop {
     /// Vector of everything in the render state of the game.
-    /// I couldn't get rust to have a vec of mutable trait objects without
-    /// using `Rc<RefCell<...>>`, in reality these objects should only ever
-    /// have one owner, this vector
-    layers: Vec<Rc<RefCell<dyn crate::Layer>>>,
+    layers: Vec<Box<dyn crate::Layer>>,
 
     /// The current graphics state.
     state: EngineState,
@@ -74,7 +71,7 @@ impl MainLoop {
     /// other settings, depending on the layer.
     pub fn add_layer<L: 'static + crate::Layer>(&mut self) -> Result<()> {
         let layer = L::new(&self.state)?;
-        self.layers.push(Rc::new(RefCell::new(layer)));
+        self.layers.push(Box::new(layer));
 
         Ok(())
     }
@@ -97,7 +94,7 @@ impl MainLoop {
 
             'event: while let Some(event) = self.state.window.event() {
                 for layer in self.layers.iter_mut().rev() {
-                    let res = layer.borrow_mut().handle_event(&mut self.state, &event);
+                    let res = layer.handle_event(&mut self.state, &event);
                     match res {
                         EventResult::Handled => continue 'event,
                         EventResult::Exit => break 'main,
@@ -112,7 +109,7 @@ impl MainLoop {
 
             while accumulator >= DT {
                 for layer in self.layers.iter_mut() {
-                    layer.borrow_mut().update(&self.state, DT);
+                    layer.update(&self.state, DT);
                 }
 
                 accumulator -= DT;
@@ -120,7 +117,7 @@ impl MainLoop {
             }
 
             for layer in self.layers.iter_mut() {
-                layer.borrow_mut().render(&mut self.state);
+                layer.render(&mut self.state);
             }
 
             self.state.window.swap_window();
