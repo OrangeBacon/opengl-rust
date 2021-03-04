@@ -120,8 +120,9 @@ impl MainLoop {
             }
 
             for layer in self.layers.iter_mut() {
-                layer.borrow_mut().render(&self.state);
+                layer.borrow_mut().render(&mut self.state);
             }
+
             self.state.window.swap_window();
         }
 

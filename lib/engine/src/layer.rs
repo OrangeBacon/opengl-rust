@@ -35,5 +35,5 @@ pub trait Layer {
     fn update(&mut self, state: &EngineState, dt: f32);
 
     /// Run the rendering for this layer
-    fn render(&mut self, state: &EngineState);
+    fn render(&mut self, state: &mut EngineState);
 }

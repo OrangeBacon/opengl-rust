@@ -147,7 +147,7 @@ impl Layer for Triangle {
         self.camera.update(state, dt);
     }
 
-    fn render(&mut self, state: &EngineState) {
+    fn render(&mut self, state: &mut EngineState) {
         unsafe {
             state.gl.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
         }

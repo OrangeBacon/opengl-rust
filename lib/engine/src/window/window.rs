@@ -63,6 +63,8 @@ pub trait Window {
 
     /// Get a setter and getter for thee clipboard
     fn clipboard(&self) -> Box<dyn Clipboard>;
+
+    fn set_cursor(&mut self, cursor: SystemCursors);
 }
 
 /// Wrapper around the system clipboard
@@ -72,4 +74,19 @@ pub trait Clipboard {
 
     /// set the string stored by the clipboard
     fn set(&mut self, data: &str);
+}
+
+/// The default set of operating system cursors
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SystemCursors {
+    Arrow,
+    TextInput,
+    ResizeAll,
+    ResizeNS,
+    ResizeEW,
+    ResizeNESW,
+    ResizeNWSE,
+    Hand,
+    NotAllowed,
+    NoCursor,
 }

@@ -1,12 +1,11 @@
 use anyhow::Result;
-use sdl2::{video::GLContext, VideoSubsystem};
 use thiserror::Error;
 
 use super::{
     event::{Event, MouseButton, MouseButtonState},
     input::InputState,
     scancode::Scancode,
-    window::{Clipboard, Window, WindowConfig},
+    window::{Clipboard, SystemCursors, Window, WindowConfig},
 };
 
 /// Error type used during initialisation of SDL2 - the default bindings only
@@ -26,6 +25,9 @@ enum SdlError {
 
     #[error("Error while initialising SLD2 event pump: {reason}")]
     Event { reason: String },
+
+    #[error("Error while creating a cursor: {reason}")]
+    Cursor { reason: String },
 }
 
 /// Stores sdl state required
@@ -34,7 +36,7 @@ pub struct SdlWindow {
     sdl: sdl2::Sdl,
 
     /// The video subsystem of sdl, used for loading opengl
-    video: VideoSubsystem,
+    video: sdl2::VideoSubsystem,
 
     /// The current window, todo: multiple window support?
     window: sdl2::video::Window,
@@ -43,10 +45,13 @@ pub struct SdlWindow {
     /// to be kept around for the application to not break when the context is
     /// dropped.  Can also be used for setting which context is current, which
     /// is why multiple contexts are possible.  No idea if it is useful though.
-    gl_contexts: Vec<GLContext>,
+    gl_contexts: Vec<sdl2::video::GLContext>,
 
     /// The global sdl event pump, is valid for all windows
     event_pump: sdl2::EventPump,
+
+    /// The currently loaded cursor, needed so it isn't dropped
+    _cursor: sdl2::mouse::Cursor,
 }
 
 impl Window for SdlWindow {
@@ -82,11 +87,15 @@ impl Window for SdlWindow {
             .event_pump()
             .map_err(|e| SdlError::Event { reason: e })?;
 
+        let cursor = sdl2::mouse::Cursor::from_system(sdl2::mouse::SystemCursor::Arrow)
+            .map_err(|e| SdlError::Cursor { reason: e })?;
+
         Ok(Self {
             sdl,
             video,
             window,
             event_pump,
+            _cursor: cursor,
             gl_contexts: Vec::with_capacity(1),
         })
     }
@@ -170,6 +179,34 @@ impl Window for SdlWindow {
         let clip = self.window.subsystem().clipboard();
 
         Box::new(SdlClipboard(clip))
+    }
+
+    fn set_cursor(&mut self, cursor: SystemCursors) {
+        use sdl2::mouse::SystemCursor as SdlCursor;
+
+        let mouse = self.window.subsystem().sdl().mouse();
+
+        let cursor = match cursor {
+            SystemCursors::Arrow => SdlCursor::Arrow,
+            SystemCursors::TextInput => SdlCursor::IBeam,
+            SystemCursors::ResizeAll => SdlCursor::SizeAll,
+            SystemCursors::ResizeNS => SdlCursor::SizeNS,
+            SystemCursors::ResizeEW => SdlCursor::SizeWE,
+            SystemCursors::ResizeNESW => SdlCursor::SizeNESW,
+            SystemCursors::ResizeNWSE => SdlCursor::SizeNWSE,
+            SystemCursors::Hand => SdlCursor::Hand,
+            SystemCursors::NotAllowed => SdlCursor::No,
+            SystemCursors::NoCursor => {
+                mouse.show_cursor(false);
+                return;
+            }
+        };
+
+        if let Ok(sys) = sdl2::mouse::Cursor::from_system(cursor) {
+            mouse.show_cursor(true);
+            sys.set();
+            self._cursor = sys;
+        }
     }
 }
 

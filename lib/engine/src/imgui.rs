@@ -2,7 +2,11 @@ use std::time::Instant;
 
 use crate::{
     main_loop::EngineState,
-    window::{event::Event, scancode::Scancode, window::Clipboard},
+    window::{
+        event::Event,
+        scancode::Scancode,
+        window::{Clipboard, SystemCursors},
+    },
     EventResult, Layer,
 };
 use anyhow::Result;
@@ -11,6 +15,7 @@ pub struct ImguiLayer {
     context: imgui::Context,
     frame_time: Instant,
     renderer: imgui_opengl_renderer::Renderer,
+    current_cursor: SystemCursors,
 }
 
 impl Layer for ImguiLayer {
@@ -50,6 +55,7 @@ impl Layer for ImguiLayer {
             context,
             frame_time,
             renderer,
+            current_cursor: SystemCursors::Arrow,
         })
     }
 
@@ -113,7 +119,7 @@ impl Layer for ImguiLayer {
     // imgui does everything in the render function, no update needed
     fn update(&mut self, _state: &EngineState, _dt: f32) {}
 
-    fn render(&mut self, state: &EngineState) {
+    fn render(&mut self, state: &mut EngineState) {
         let io = self.context.io_mut();
 
         let (w, h) = state.window.size();
@@ -140,7 +146,34 @@ impl Layer for ImguiLayer {
         self.context.io_mut().delta_time = delta;
 
         let ui = self.context.frame();
+
         ui.show_demo_window(&mut true);
+
+        if !ui
+            .io()
+            .config_flags
+            .contains(imgui::ConfigFlags::NO_MOUSE_CURSOR_CHANGE)
+        {
+            let cursor = match ui.mouse_cursor() {
+                Some(cursor) if !ui.io().mouse_draw_cursor => match cursor {
+                    imgui::MouseCursor::Arrow => SystemCursors::Arrow,
+                    imgui::MouseCursor::TextInput => SystemCursors::TextInput,
+                    imgui::MouseCursor::ResizeAll => SystemCursors::ResizeAll,
+                    imgui::MouseCursor::ResizeNS => SystemCursors::ResizeNS,
+                    imgui::MouseCursor::ResizeEW => SystemCursors::ResizeEW,
+                    imgui::MouseCursor::ResizeNESW => SystemCursors::ResizeNESW,
+                    imgui::MouseCursor::ResizeNWSE => SystemCursors::ResizeNWSE,
+                    imgui::MouseCursor::Hand => SystemCursors::Hand,
+                    imgui::MouseCursor::NotAllowed => SystemCursors::NotAllowed,
+                },
+                _ => SystemCursors::NoCursor,
+            };
+
+            if self.current_cursor != cursor {
+                state.window.set_cursor(cursor);
+                self.current_cursor = cursor;
+            }
+        }
 
         self.renderer.render(ui);
     }
