@@ -4,7 +4,7 @@ use engine::{
     model::{GLModel, Model},
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
-    Camera, EngineState, EventResult, Layer, MainLoop,
+    Camera, EngineStateRef, EventResult, Layer, MainLoop,
 };
 use gl_derive::VertexAttribPointers;
 use native_dialog::FileDialog;
@@ -27,7 +27,7 @@ struct Triangle {
 }
 
 impl Triangle {
-    fn swap_model(&mut self, state: &mut EngineState) -> Option<()> {
+    fn swap_model(&mut self, state: &EngineStateRef) -> Option<()> {
         let result = FileDialog::new()
             .add_filter("glTF Model", &["gltf", "glb"])
             .show_open_single_file();
@@ -84,7 +84,7 @@ impl Triangle {
 }
 
 impl Layer for Triangle {
-    fn new(state: &EngineState) -> Result<Self> {
+    fn new(state: &mut EngineStateRef) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
 
         let model = Model::from_res(&res, "sea_keep_lonely_watcher/scene.gltf")?;
@@ -110,7 +110,7 @@ impl Layer for Triangle {
         Ok(this)
     }
 
-    fn handle_event(&mut self, state: &mut EngineState, event: &Event) -> EventResult {
+    fn handle_event(&mut self, state: &mut EngineStateRef, event: &Event) -> EventResult {
         match event {
             Event::Resize { width, height, .. } => unsafe {
                 state.gl.Viewport(0, 0, *width as _, *height as _);
@@ -143,11 +143,11 @@ impl Layer for Triangle {
         }
     }
 
-    fn update(&mut self, state: &EngineState, dt: f32) {
+    fn update(&mut self, state: &mut EngineStateRef, dt: f32) {
         self.camera.update(state, dt);
     }
 
-    fn render(&mut self, state: &mut EngineState) {
+    fn render(&mut self, state: &mut EngineStateRef) {
         unsafe {
             state.gl.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
         }
@@ -175,11 +175,7 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let mut main_loop = MainLoop::new::<SdlWindow>()?;
-    main_loop.add_layer::<Triangle>()?;
-    main_loop.add_layer::<engine::imgui::ImguiLayer>()?;
-
-    main_loop.run()?;
+    MainLoop::new::<SdlWindow, engine::imgui::ImguiLayer<Triangle>>()?.run()?;
 
     Ok(())
 }

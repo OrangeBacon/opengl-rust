@@ -18,10 +18,10 @@ mod create_shader;
 pub use create_shader::DynamicShader;
 
 mod layer;
-pub use layer::{EventResult, Layer};
+pub use layer::{CallOrder, EventResult, Layer};
 
 mod main_loop;
-pub use main_loop::{EngineState, MainLoop};
+pub use main_loop::{EngineStateRef, MainLoop};
 
 mod camera;
 pub use camera::Camera;

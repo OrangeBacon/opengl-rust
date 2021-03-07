@@ -1,7 +1,7 @@
 use nalgebra_glm as glm;
 use scancode::Scancode;
 
-use crate::{window::scancode, EngineState};
+use crate::{window::scancode, EngineStateRef};
 
 /// Simple camera object
 /// uses euler angles, prevents looking up so that it doesn't gimble lock
@@ -78,7 +78,7 @@ impl Camera {
     }
 
     /// update the camera's location from user input
-    pub fn update(&mut self, state: &EngineState, dt: f32) {
+    pub fn update(&mut self, state: &EngineStateRef, dt: f32) {
         // move the camera with wasd
         let camera_speed = self.movement_speed * dt;
         if state.inputs.is_key_pressed(Scancode::W) {

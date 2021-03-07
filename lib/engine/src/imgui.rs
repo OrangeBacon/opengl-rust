@@ -1,25 +1,29 @@
-use std::time::Instant;
+use std::{marker::PhantomData, time::Instant};
 
 use crate::{
-    main_loop::EngineState,
     window::{
         event::Event,
         scancode::Scancode,
         window::{Clipboard, SystemCursors},
     },
-    EventResult, Layer,
+    CallOrder, EngineStateRef, EventResult, Layer,
 };
 use anyhow::Result;
 
-pub struct ImguiLayer {
+pub struct ImguiLayer<T: Layer> {
     context: imgui::Context,
     frame_time: Instant,
     renderer: imgui_opengl_renderer::Renderer,
     current_cursor: SystemCursors,
+
+    _child: PhantomData<T>,
 }
 
-impl Layer for ImguiLayer {
-    fn new(state: &EngineState) -> Result<Self> {
+impl<T: Layer + 'static> Layer for ImguiLayer<T> {
+    fn new(state: &mut EngineStateRef) -> Result<Self> {
+        let base_state = T::new(state)?;
+        state.push_state(base_state);
+
         let mut context = imgui::Context::create();
         context.set_ini_filename(None);
         context.set_clipboard_backend(Box::new(ImguiClipboard(state.window.clipboard())));
@@ -56,10 +60,11 @@ impl Layer for ImguiLayer {
             frame_time,
             renderer,
             current_cursor: SystemCursors::Arrow,
+            _child: PhantomData::default(),
         })
     }
 
-    fn handle_event(&mut self, state: &mut EngineState, event: &Event) -> EventResult {
+    fn handle_event(&mut self, state: &mut EngineStateRef, event: &Event) -> EventResult {
         // based upon the keys currently help down, tell imgui about ctrl/shift/etc
         let set_modifiers = |io: &mut imgui::Io| {
             let inp = |key| state.inputs.is_key_pressed(key);
@@ -117,9 +122,9 @@ impl Layer for ImguiLayer {
     }
 
     // imgui does everything in the render function, no update needed
-    fn update(&mut self, _state: &EngineState, _dt: f32) {}
+    fn update(&mut self, _state: &mut EngineStateRef, _dt: f32) {}
 
-    fn render(&mut self, state: &mut EngineState) {
+    fn render(&mut self, state: &mut EngineStateRef) {
         let io = self.context.io_mut();
 
         let (w, h) = state.window.size();
@@ -176,6 +181,16 @@ impl Layer for ImguiLayer {
         }
 
         self.renderer.render(ui);
+    }
+
+    /// in order to render ontop of the game, it needs defered rendering
+    fn render_order(&self) -> CallOrder {
+        CallOrder::Deferred
+    }
+
+    /// in order to read the other states it needs defered updates
+    fn update_order(&self) -> CallOrder {
+        CallOrder::Deferred
     }
 }
 

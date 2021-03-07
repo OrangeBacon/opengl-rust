@@ -1,5 +1,8 @@
 use anyhow::Result;
-use std::time::Instant;
+use std::{
+    ops::{Deref, DerefMut},
+    time::Instant,
+};
 
 use crate::{
     window::{
@@ -7,7 +10,7 @@ use crate::{
         input::{InputState, KeyState},
         window::{Window, WindowConfig},
     },
-    EventResult,
+    CallOrder, EventResult, Layer,
 };
 
 /// Graphics api state that is available to render layers.
@@ -21,7 +24,52 @@ pub struct EngineState {
     /// The total time the program has been running in seconds
     pub run_time: f32,
 
+    /// The operating system window being used
     pub window: Box<dyn Window>,
+}
+
+/// A reference to the current engine state, allowing updating the layer stack
+/// from within update/render methods
+pub struct EngineStateRef<'a> {
+    /// The engine state being referenced
+    state: &'a mut EngineState,
+
+    /// The id of the layer that is being passed this reference
+    layer_id: usize,
+
+    /// Any states added to the engine during the call
+    layer_push: &'a mut Vec<Box<dyn Layer>>,
+
+    /// Indicis of any stats that are removed during the call
+    layer_pop: &'a mut Vec<usize>,
+}
+
+impl<'a> EngineStateRef<'a> {
+    /// Push a new layer to the engine at the end of this frame
+    pub fn push_state<T: Layer + 'static>(&mut self, layer: T) {
+        self.layer_push.push(Box::new(layer));
+    }
+
+    /// Remove this layer from the engine at the end of this frame
+    pub fn pop_state(&mut self) {
+        self.layer_pop.push(self.layer_id);
+    }
+}
+
+impl<'a> Deref for EngineStateRef<'a> {
+    type Target = EngineState;
+
+    /// treat the EngineStateRef as an engine state, avoids api changes
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
+}
+
+impl<'a> DerefMut for EngineStateRef<'a> {
+    /// treat the EngineStateRef as an engine state, avoids api changes
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.state
+    }
 }
 
 /// The main game storage, is used to call the main loop.
@@ -31,6 +79,12 @@ pub struct MainLoop {
 
     /// The current graphics state.
     state: EngineState,
+
+    /// The order that updates should be processed in
+    update_order: Vec<usize>,
+
+    /// The order that renders should be processed in
+    render_order: Vec<usize>,
 }
 
 impl MainLoop {
@@ -38,7 +92,7 @@ impl MainLoop {
     /// Currently there is no way to change the settings used, this should
     /// probably be changed.  This method initialises the graphics and creates
     /// a window that will be shown to the user.
-    pub fn new<T: Window + 'static>() -> Result<Self> {
+    pub fn new<W: Window + 'static, L: Layer + 'static>() -> Result<Self> {
         let config = WindowConfig {
             debug: true,
             gl_version: (4, 5),
@@ -48,40 +102,65 @@ impl MainLoop {
             title: "Game",
         };
 
-        let mut window = T::new(config)?;
+        let mut window = W::new(config)?;
 
         let gl = window.new_gl_context()?;
 
         #[cfg(debug_assertions)]
         enable_gl_debugging(&gl);
 
-        Ok(MainLoop {
-            layers: vec![],
-            state: EngineState {
-                gl,
-                window: Box::new(window),
-                inputs: Default::default(),
-                run_time: 0.0,
-            },
-        })
-    }
+        let state = EngineState {
+            gl,
+            window: Box::new(window),
+            inputs: Default::default(),
+            run_time: 0.0,
+        };
 
-    /// Adds a new layer to the renderer. Initialises the layer based upon
-    /// the engine state.  Todo: allow layers to be configured based upon
-    /// other settings, depending on the layer.
-    pub fn add_layer<L: 'static + crate::Layer>(&mut self) -> Result<()> {
-        let layer = L::new(&self.state)?;
-        self.layers.push(Box::new(layer));
+        // vec capacity 4 is completely arbitary, could increase/decrease later
+        // depending on layer stack size
+        let mut this = MainLoop {
+            layers: Vec::with_capacity(4),
+            state,
+            update_order: Vec::with_capacity(4),
+            render_order: Vec::with_capacity(4),
+        };
 
-        Ok(())
+        // For the first layer, push goes directly onto the layer stack as there
+        // isn't anything else to intefere, so no point allocating a new vec.
+        // Ignores poping any states in this method as there should be no use
+        // so don't bother trying to deal with it.
+        let mut state_ref = EngineStateRef {
+            layer_push: &mut this.layers,
+            state: &mut this.state,
+            layer_pop: &mut Vec::with_capacity(0),
+            layer_id: 0,
+        };
+
+        let first_layer = Box::new(L::new(&mut state_ref)?);
+
+        // Insert the first layer in index 0, as it should be first, regardless
+        // of what else was pushed during its initialisation.
+        this.layers.insert(0, first_layer);
+
+        // this needs to be called any time self.layers is modified
+        this.set_call_order();
+
+        Ok(this)
     }
 
     /// Start the game loop, this function will not return until the main window
     /// is closed, only saving, error reporting, etc should happen afterwards.
     pub fn run(mut self) -> Result<()> {
+        // timing infomation
         const DT: f32 = 1.0 / 60.0;
         let mut current_time = Instant::now();
         let mut accumulator = 0.0;
+
+        // The layers pushed and poped during a single loop, allocated outside
+        // the loop to reduce reallocation of these vectors, they are cleared
+        // at the end of a loop if required.
+        let mut layer_push = vec![];
+        let mut layer_pop = vec![];
 
         'main: loop {
             let new_time = Instant::now();
@@ -92,9 +171,17 @@ impl MainLoop {
 
             self.state.window.update_mouse(&mut self.state.inputs);
 
+            // poll for events
             'event: while let Some(event) = self.state.window.event() {
-                for layer in self.layers.iter_mut().rev() {
-                    let res = layer.handle_event(&mut self.state, &event);
+                for &layer in &self.update_order {
+                    let mut state = EngineStateRef {
+                        state: &mut self.state,
+                        layer_push: &mut layer_push,
+                        layer_pop: &mut layer_pop,
+                        layer_id: layer,
+                    };
+
+                    let res = self.layers[layer].handle_event(&mut state, &event);
                     match res {
                         EventResult::Handled => continue 'event,
                         EventResult::Exit => break 'main,
@@ -107,23 +194,86 @@ impl MainLoop {
                 }
             }
 
+            // run updates
             while accumulator >= DT {
-                for layer in self.layers.iter_mut() {
-                    layer.update(&self.state, DT);
+                for &layer in &self.update_order {
+                    let mut state = EngineStateRef {
+                        state: &mut self.state,
+                        layer_push: &mut layer_push,
+                        layer_pop: &mut layer_pop,
+                        layer_id: layer,
+                    };
+                    self.layers[layer].update(&mut state, DT);
                 }
 
                 accumulator -= DT;
                 self.state.run_time += DT;
             }
 
-            for layer in self.layers.iter_mut() {
-                layer.render(&mut self.state);
+            // render a scene
+            for &layer in &self.render_order {
+                let mut state = EngineStateRef {
+                    state: &mut self.state,
+                    layer_push: &mut layer_push,
+                    layer_pop: &mut layer_pop,
+                    layer_id: layer,
+                };
+                self.layers[layer].render(&mut state);
+            }
+
+            // update layers
+            if !layer_pop.is_empty() || !layer_push.is_empty() {
+                layer_pop.sort_unstable();
+
+                for &layer in layer_pop.iter().rev() {
+                    self.layers.remove(layer);
+                }
+
+                for layer in layer_push.drain(..) {
+                    self.layers.push(layer);
+                }
+
+                self.set_call_order();
+
+                layer_pop.clear();
             }
 
             self.state.window.swap_window();
         }
 
         Ok(())
+    }
+
+    /// Re-calculate the update and render orders for the main loop - takes into
+    /// account whether layers updates and renders are deferred or not.
+    fn set_call_order(&mut self) {
+        self.update_order.clear();
+        self.render_order.clear();
+
+        let mut deferred_update = vec![];
+        let mut deferred_render = vec![];
+
+        for (i, layer) in self.layers.iter().enumerate() {
+            if layer.update_order() == CallOrder::Deferred {
+                deferred_update.push(i);
+            } else {
+                self.update_order.push(i);
+            }
+
+            if layer.render_order() == CallOrder::Deferred {
+                deferred_render.push(i);
+            } else {
+                self.render_order.push(i);
+            }
+        }
+
+        for i in deferred_update.into_iter().rev() {
+            self.update_order.push(i);
+        }
+
+        for i in deferred_render.into_iter().rev() {
+            self.render_order.push(i);
+        }
     }
 }
 
