@@ -1,24 +1,13 @@
 use anyhow::Result;
 use engine::{
-    data, gl, glm,
+    glm,
     model::{GLModel, Model},
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
     Camera, EngineStateRef, EventResult, Layer, MainLoop,
 };
-use gl_derive::VertexAttribPointers;
 use native_dialog::FileDialog;
 use std::path::Path;
-
-#[derive(VertexAttribPointers, Copy, Clone, Debug)]
-#[repr(C, packed)]
-struct Vertex {
-    #[location = 0]
-    pos: data::f32_f32_f32,
-
-    #[location = 1]
-    uv: data::f32_f32,
-}
 
 struct Triangle {
     camera: Camera,
@@ -91,13 +80,7 @@ impl Layer for Triangle {
         let gl_data = GLModel::new(&model, &state.gl)?;
 
         let (width, height) = state.window.size();
-
-        unsafe {
-            state.gl.Viewport(0, 0, width as i32, height as i32);
-            state.gl.ClearColor(0.3, 0.3, 0.5, 1.0);
-            state.gl.Enable(gl::DEPTH_TEST);
-            //state.gl.PolygonMode(gl::FRONT_AND_BACK, gl::LINE);
-        }
+        state.viewport(width, height);
 
         let mut this = Triangle {
             model,
@@ -112,10 +95,10 @@ impl Layer for Triangle {
 
     fn handle_event(&mut self, state: &mut EngineStateRef, event: &Event) -> EventResult {
         match event {
-            Event::Resize { width, height, .. } => unsafe {
-                state.gl.Viewport(0, 0, *width as _, *height as _);
+            Event::Resize { width, height, .. } => {
+                state.viewport(*width, *height);
                 EventResult::Handled
-            },
+            }
 
             // fix issue with mouse movement being limited if the window loses
             // and regains focus
@@ -148,9 +131,7 @@ impl Layer for Triangle {
     }
 
     fn render(&mut self, state: &mut EngineStateRef) {
-        unsafe {
-            state.gl.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-        }
+        state.clear(0.3, 0.3, 0.5);
 
         let (width, height) = state.window.size();
 

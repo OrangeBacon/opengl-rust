@@ -8,6 +8,7 @@ pub mod resources;
 pub mod scene;
 pub mod texture;
 pub mod window;
+pub mod renderer;
 
 mod data_uri;
 

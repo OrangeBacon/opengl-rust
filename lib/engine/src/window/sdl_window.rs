@@ -1,6 +1,8 @@
 use anyhow::Result;
 use thiserror::Error;
 
+use crate::renderer::gl_render::GlRenderer;
+
 use super::{
     event::{Event, MouseButton, MouseButtonState},
     input::InputState,
@@ -207,6 +209,23 @@ impl Window for SdlWindow {
             sys.set();
             self._cursor = sys;
         }
+    }
+
+    fn renderer(&mut self) -> Result<Box<dyn crate::renderer::Renderer>> {
+        // create a new opengl context
+        // this makes the new context current
+        let ctx = self
+            .window
+            .gl_create_context()
+            .map_err(|e| SdlError::GlContext { reason: e })?;
+
+        // store it so it isn't dropped
+        self.gl_contexts.push(ctx);
+
+        // Tell OpenGL where to find its functions
+        let gl = gl::Gl::load_with(|s| self.video.gl_get_proc_address(s) as _);
+
+        Ok(Box::new(GlRenderer::new(gl)))
     }
 }
 

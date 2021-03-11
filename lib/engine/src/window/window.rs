@@ -1,5 +1,7 @@
 use anyhow::Result;
 
+use crate::renderer::Renderer;
+
 use super::{event::Event, input::InputState};
 
 /// The startup settings to configure a new window with
@@ -61,10 +63,14 @@ pub trait Window {
     /// Get the current size of the window being displayed
     fn size(&self) -> (u32, u32);
 
-    /// Get a setter and getter for thee clipboard
+    /// Get a setter and getter for the clipboard
     fn clipboard(&self) -> Box<dyn Clipboard>;
 
+    /// Set the current cursor rendered by the windowing system
     fn set_cursor(&mut self, cursor: SystemCursors);
+
+    /// Get a rendering context
+    fn renderer(&mut self) -> Result<Box<dyn Renderer>>;
 }
 
 /// Wrapper around the system clipboard

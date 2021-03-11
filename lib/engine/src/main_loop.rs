@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::{
+    renderer::Renderer,
     window::{
         event::Event,
         input::{InputState, KeyState},
@@ -26,6 +27,27 @@ pub struct EngineState {
 
     /// The operating system window being used
     pub window: Box<dyn Window>,
+
+    /// The current renderer
+    renderer: Box<dyn Renderer>,
+}
+
+// For now i'm allowing direct access to the renderer.  When all commands use
+// the renderer, then it can be moved to using command lists and mpsc channels,
+// allowing multi-threading.  That cannot be done now due to raw gl calls being
+// mixed with renderer calls.
+impl Deref for EngineState {
+    type Target = dyn Renderer;
+
+    fn deref(&self) -> &Self::Target {
+        self.renderer.as_ref()
+    }
+}
+
+impl DerefMut for EngineState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.renderer.as_mut()
+    }
 }
 
 /// A reference to the current engine state, allowing updating the layer stack
@@ -111,6 +133,7 @@ impl MainLoop {
 
         let state = EngineState {
             gl,
+            renderer: window.renderer()?,
             window: Box::new(window),
             inputs: Default::default(),
             run_time: 0.0,
