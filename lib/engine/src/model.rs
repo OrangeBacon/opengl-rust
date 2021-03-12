@@ -6,7 +6,7 @@ use crate::{
     resources::{Error as ResourceError, Resources},
     texture,
     texture::Texture,
-    DynamicShader, Program,
+    DynamicShader, EngineStateRef, Program,
 };
 use anyhow::Result;
 use gl::types::{GLenum, GLsizei};
@@ -894,13 +894,19 @@ impl GLModel {
         })
     }
 
-    pub fn render(&self, model: &Model, gl: &gl::Gl, proj: &glm::Mat4, view: &glm::Mat4) {
+    pub fn render(
+        &self,
+        model: &Model,
+        state: &mut EngineStateRef,
+        proj: &glm::Mat4,
+        view: &glm::Mat4,
+    ) {
         let scene_idx = model.gltf.scene.unwrap_or(0);
         let scene = &model.scenes[scene_idx];
 
         for node_idx in &scene.root_nodes {
             let node = &scene.nodes[*node_idx];
-            self.render_node(node, scene, model, gl, proj, view);
+            self.render_node(node, scene, model, state, proj, view);
         }
     }
 
@@ -909,17 +915,17 @@ impl GLModel {
         node: &Node,
         scene: &Scene,
         model: &Model,
-        gl: &gl::Gl,
+        state: &mut EngineStateRef,
         proj: &glm::Mat4,
         view: &glm::Mat4,
     ) {
         if let Some(id) = node.mesh_id {
-            self.meshes[id].render(model, self, gl, &node.global_matrix, proj, view);
+            self.meshes[id].render(model, self, state, &node.global_matrix, proj, view);
         }
 
         for child in &node.children {
             let node = &scene.nodes[*child];
-            self.render_node(node, scene, model, gl, proj, view)
+            self.render_node(node, scene, model, state, proj, view)
         }
     }
 
@@ -1020,13 +1026,13 @@ impl GLMesh {
         &self,
         model: &Model,
         gl_state: &GLModel,
-        gl: &gl::Gl,
+        state: &mut EngineStateRef,
         model_mat: &glm::Mat4,
         proj: &glm::Mat4,
         view: &glm::Mat4,
     ) {
         for prim in &self.prims {
-            prim.render(model, gl, gl_state, model_mat, proj, view);
+            prim.render(model, gl_state, state, model_mat, proj, view);
         }
     }
 }
@@ -1092,8 +1098,8 @@ impl GlPrim {
     fn render(
         &self,
         model: &Model,
-        gl: &gl::Gl,
         gl_state: &GLModel,
+        state: &mut EngineStateRef,
         model_mat: &glm::Mat4,
         proj: &glm::Mat4,
         view: &glm::Mat4,
@@ -1112,10 +1118,7 @@ impl GlPrim {
         };
 
         if self.culling {
-            unsafe {
-                gl.Enable(gl::CULL_FACE);
-                gl.CullFace(gl::BACK);
-            }
+            state.backface_culling(true);
         }
 
         self.vao.bind();
@@ -1131,7 +1134,7 @@ impl GlPrim {
             let r#type = access.component_type.gl_type();
 
             unsafe {
-                gl.DrawElements(
+                state.gl.DrawElements(
                     self.mode,
                     access.count as GLsizei,
                     r#type,
@@ -1142,14 +1145,12 @@ impl GlPrim {
             buffer.unbind();
         } else {
             unsafe {
-                gl.DrawArrays(self.mode, 0, self.count as i32);
+                state.gl.DrawArrays(self.mode, 0, self.count as i32);
             }
         }
 
         if self.culling {
-            unsafe {
-                gl.Disable(gl::CULL_FACE);
-            }
+            state.backface_culling(false);
         }
 
         self.vao.unbind();

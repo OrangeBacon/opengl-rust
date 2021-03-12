@@ -1,5 +1,11 @@
 pub mod gl_render;
 
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct TextureId(pub(crate) usize);
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ShaderId(pub(crate) usize);
+
 /// The methods required for each renderer backend to implement
 pub trait Renderer {
     /// Clear the screen to the specified color
@@ -7,4 +13,7 @@ pub trait Renderer {
 
     /// Set the viewport size
     fn viewport(&mut self, width: u32, height: u32);
+
+    /// Enable or disable backface culling
+    fn backface_culling(&mut self, enable: bool);
 }

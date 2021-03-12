@@ -144,7 +144,7 @@ impl Layer for Triangle {
 
         let view = self.camera.get_view();
 
-        self.gl_data.render(&self.model, &state.gl, &proj, &view);
+        self.gl_data.render(&self.model, state, &proj, &view);
     }
 }
 

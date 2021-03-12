@@ -29,6 +29,17 @@ impl Renderer for GlRenderer {
             self.gl.Viewport(0, 0, width as _, height as _);
         }
     }
+
+    fn backface_culling(&mut self, enable: bool) {
+        if enable {
+            unsafe {
+                self.gl.Enable(gl::CULL_FACE);
+                self.gl.CullFace(gl::BACK);
+            }
+        } else {
+            unsafe { self.gl.Disable(gl::CULL_FACE) }
+        }
+    }
 }
 
 /// attach console print debugging to the provided OpenGL Context
