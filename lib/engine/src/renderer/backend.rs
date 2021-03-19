@@ -7,7 +7,10 @@ pub type IdType = usize;
 pub struct TextureId(pub(crate) IdType);
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ShaderId(pub(crate) IdType);
+pub struct VertexBufferId(pub(crate) IdType);
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct IndexBufferId(pub(crate) IdType);
 
 /// The methods required for each renderer backend to implement
 pub trait RendererBackend {
@@ -25,4 +28,16 @@ pub trait RendererBackend {
 
     /// Unload a texture
     fn unload_texture(&mut self, texture: TextureId);
+
+    /// Load data as a vertex buffer
+    fn load_vertex_buffer(&mut self, data: &[u8]) -> VertexBufferId;
+
+    /// Unload a vertex buffer
+    fn unload_vertex_buffer(&mut self, buffer: VertexBufferId);
+
+    /// Load data as an index buffer
+    fn load_index_buffer(&mut self, data: &[u8]) -> IndexBufferId;
+
+    /// Unload an index buffer
+    fn unload_undex_buffer(&mut self, buffer: IndexBufferId);
 }

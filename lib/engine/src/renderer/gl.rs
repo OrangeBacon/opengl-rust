@@ -1,14 +1,19 @@
 use std::collections::HashMap;
 
-use crate::texture::{GlTexture, Texture};
+use crate::{
+    buffer::Buffer,
+    texture::{GlTexture, Texture},
+};
 
-use super::backend::{IdType, RendererBackend, TextureId};
+use super::backend::{IdType, IndexBufferId, RendererBackend, TextureId, VertexBufferId};
 
 pub struct GlRenderer {
     gl: gl::Gl,
 
-    texture_id: IdType,
+    id: IdType,
+
     textures: HashMap<IdType, GlTexture>,
+    buffers: HashMap<IdType, Buffer>,
 }
 
 impl GlRenderer {
@@ -21,8 +26,9 @@ impl GlRenderer {
 
         GlRenderer {
             gl,
-            texture_id: 0,
+            id: 0,
             textures: HashMap::new(),
+            buffers: HashMap::new(),
         }
     }
 }
@@ -53,8 +59,8 @@ impl RendererBackend for GlRenderer {
     }
 
     fn load_texture(&mut self, texture: Texture) -> TextureId {
-        let id = self.texture_id;
-        self.texture_id += 1;
+        let id = self.id;
+        self.id += 1;
 
         self.textures
             .insert(id, GlTexture::new(&self.gl, &texture, 0));
@@ -64,6 +70,42 @@ impl RendererBackend for GlRenderer {
 
     fn unload_texture(&mut self, texture: TextureId) {
         self.textures.remove(&texture.0);
+    }
+
+    fn load_vertex_buffer(&mut self, data: &[u8]) -> VertexBufferId {
+        let id = self.id;
+        self.id += 1;
+
+        let buf = Buffer::new(&self.gl, gl::ARRAY_BUFFER);
+        buf.bind();
+        buf.static_draw_data(data);
+        buf.unbind();
+
+        self.buffers.insert(id, buf);
+
+        VertexBufferId(id)
+    }
+
+    fn unload_vertex_buffer(&mut self, buffer: VertexBufferId) {
+        self.buffers.remove(&buffer.0);
+    }
+
+    fn load_index_buffer(&mut self, data: &[u8]) -> IndexBufferId {
+        let id = self.id;
+        self.id += 1;
+
+        let buf = Buffer::new(&self.gl, gl::ELEMENT_ARRAY_BUFFER);
+        buf.bind();
+        buf.static_draw_data(data);
+        buf.unbind();
+
+        self.buffers.insert(id, buf);
+
+        IndexBufferId(id)
+    }
+
+    fn unload_undex_buffer(&mut self, buffer: IndexBufferId) {
+        self.buffers.remove(&buffer.0);
     }
 }
 
