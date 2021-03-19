@@ -1,5 +1,7 @@
 use crate::texture::Texture;
 
+use super::Pipeline;
+
 /// type inside all *Id tuple structs
 pub type IdType = usize;
 
@@ -11,6 +13,9 @@ pub struct VertexBufferId(pub(crate) IdType);
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct IndexBufferId(pub(crate) IdType);
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PipelineId(pub(crate) IdType);
 
 /// The methods required for each renderer backend to implement
 pub trait RendererBackend {
@@ -39,5 +44,11 @@ pub trait RendererBackend {
     fn load_index_buffer(&mut self, data: &[u8]) -> IndexBufferId;
 
     /// Unload an index buffer
-    fn unload_undex_buffer(&mut self, buffer: IndexBufferId);
+    fn unload_index_buffer(&mut self, buffer: IndexBufferId);
+
+    /// Load a new pipeline
+    fn load_pipeline(&mut self, pipeline: Pipeline) -> PipelineId;
+
+    /// Unloads a pipeline
+    fn unload_pipeline(&mut self, pipeline: PipelineId);
 }

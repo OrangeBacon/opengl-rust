@@ -5,7 +5,10 @@ use crate::{
     texture::{GlTexture, Texture},
 };
 
-use super::backend::{IdType, IndexBufferId, RendererBackend, TextureId, VertexBufferId};
+use super::{
+    backend::{IdType, IndexBufferId, PipelineId, RendererBackend, TextureId, VertexBufferId},
+    Pipeline,
+};
 
 pub struct GlRenderer {
     gl: gl::Gl,
@@ -104,8 +107,16 @@ impl RendererBackend for GlRenderer {
         IndexBufferId(id)
     }
 
-    fn unload_undex_buffer(&mut self, buffer: IndexBufferId) {
+    fn unload_index_buffer(&mut self, buffer: IndexBufferId) {
         self.buffers.remove(&buffer.0);
+    }
+
+    fn load_pipeline(&mut self, pipeline: Pipeline) -> PipelineId {
+        todo!()
+    }
+
+    fn unload_pipeline(&mut self, pipeline: PipelineId) {
+        todo!()
     }
 }
 
