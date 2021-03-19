@@ -1,8 +1,13 @@
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TextureId(pub(crate) usize);
+use crate::texture::Texture;
+
+/// type inside all *Id tuple structs
+pub type IdType = usize;
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ShaderId(pub(crate) usize);
+pub struct TextureId(pub(crate) IdType);
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ShaderId(pub(crate) IdType);
 
 /// The methods required for each renderer backend to implement
 pub trait RendererBackend {
@@ -14,4 +19,10 @@ pub trait RendererBackend {
 
     /// Enable or disable backface culling
     fn backface_culling(&mut self, enable: bool);
+
+    /// Load a new texture
+    fn load_texture(&mut self, texture: Texture) -> TextureId;
+
+    /// Unload a texture
+    fn unload_texture(&mut self, texture: TextureId);
 }

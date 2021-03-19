@@ -1,7 +1,14 @@
-use super::backend::RendererBackend;
+use std::collections::HashMap;
+
+use crate::texture::{GlTexture, Texture};
+
+use super::backend::{IdType, RendererBackend, TextureId};
 
 pub struct GlRenderer {
     gl: gl::Gl,
+
+    texture_id: IdType,
+    textures: HashMap<IdType, GlTexture>,
 }
 
 impl GlRenderer {
@@ -12,7 +19,11 @@ impl GlRenderer {
 
         unsafe { gl.Enable(gl::DEPTH_TEST) }
 
-        GlRenderer { gl }
+        GlRenderer {
+            gl,
+            texture_id: 0,
+            textures: HashMap::new(),
+        }
     }
 }
 
@@ -39,6 +50,20 @@ impl RendererBackend for GlRenderer {
         } else {
             unsafe { self.gl.Disable(gl::CULL_FACE) }
         }
+    }
+
+    fn load_texture(&mut self, texture: Texture) -> TextureId {
+        let id = self.texture_id;
+        self.texture_id += 1;
+
+        self.textures
+            .insert(id, GlTexture::new(&self.gl, &texture, 0));
+
+        TextureId(id)
+    }
+
+    fn unload_texture(&mut self, texture: TextureId) {
+        self.textures.remove(&texture.0);
     }
 }
 
