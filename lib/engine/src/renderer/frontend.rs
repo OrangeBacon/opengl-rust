@@ -1,6 +1,7 @@
-use crate::texture::Texture;
+use anyhow::Result;
 
 use super::backend::{IndexBufferId, PipelineId, RendererBackend, TextureId, VertexBufferId};
+use crate::texture::Texture;
 
 pub struct Renderer {
     backend: Box<dyn RendererBackend>,
@@ -67,7 +68,7 @@ impl Renderer {
 
     /// Load a new pipeline, including shader compilation
     #[inline(always)]
-    pub fn load_pipeline(&mut self, pipeline: Pipeline) -> PipelineId {
+    pub fn load_pipeline(&mut self, pipeline: Pipeline) -> Result<PipelineId> {
         self.backend.load_pipeline(pipeline)
     }
 
@@ -80,9 +81,9 @@ impl Renderer {
 
 /// A rendering pipeline, in OpenGl would be one shader program
 pub struct Pipeline {
-    vertex_shader: Option<String>,
-    fragment_shader: Option<String>,
-    attributes: Vec<VertexAttribute>,
+    pub(crate) vertex_shader: Option<String>,
+    pub(crate) fragment_shader: Option<String>,
+    pub(crate) attributes: Vec<VertexAttribute>,
 }
 
 impl Pipeline {
@@ -131,7 +132,7 @@ impl Pipeline {
     }
 }
 
-struct VertexAttribute {
+pub(crate) struct VertexAttribute {
     /// Location specified in the shader by layout(location = N)
     pub(crate) location: u32,
 

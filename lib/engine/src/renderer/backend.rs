@@ -1,9 +1,10 @@
-use crate::texture::Texture;
+use anyhow::Result;
 
 use super::Pipeline;
+use crate::texture::Texture;
 
 /// type inside all *Id tuple structs
-pub type IdType = usize;
+pub type IdType = u64;
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TextureId(pub(crate) IdType);
@@ -47,7 +48,7 @@ pub trait RendererBackend {
     fn unload_index_buffer(&mut self, buffer: IndexBufferId);
 
     /// Load a new pipeline
-    fn load_pipeline(&mut self, pipeline: Pipeline) -> PipelineId;
+    fn load_pipeline(&mut self, pipeline: Pipeline) -> Result<PipelineId>;
 
     /// Unloads a pipeline
     fn unload_pipeline(&mut self, pipeline: PipelineId);

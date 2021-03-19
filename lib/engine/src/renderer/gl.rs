@@ -1,4 +1,10 @@
-use std::collections::HashMap;
+use anyhow::Result;
+use gl::types::*;
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString, NulError},
+};
+use thiserror::Error;
 
 use crate::{
     buffer::Buffer,
@@ -7,8 +13,23 @@ use crate::{
 
 use super::{
     backend::{IdType, IndexBufferId, PipelineId, RendererBackend, TextureId, VertexBufferId},
-    Pipeline,
+    AttributeType, Pipeline,
 };
+
+#[derive(Debug, Error)]
+enum GlError {
+    #[error("Error compiling shader:\n{message}")]
+    ShaderCompilation { message: String },
+
+    #[error("Error linking shaders:\n{message}")]
+    ShaderLink { message: String },
+
+    #[error("Shader code contained nul byte, unable to compile it:\n{message}")]
+    ShaderNullByte { message: NulError },
+
+    #[error("Error getting buffer for error message, unable to display error")]
+    ErrorBuffer,
+}
 
 pub struct GlRenderer {
     gl: gl::Gl,
@@ -17,6 +38,7 @@ pub struct GlRenderer {
 
     textures: HashMap<IdType, GlTexture>,
     buffers: HashMap<IdType, Buffer>,
+    pipelines: HashMap<IdType, GlPipeline>,
 }
 
 impl GlRenderer {
@@ -32,6 +54,7 @@ impl GlRenderer {
             id: 0,
             textures: HashMap::new(),
             buffers: HashMap::new(),
+            pipelines: HashMap::new(),
         }
     }
 }
@@ -111,12 +134,86 @@ impl RendererBackend for GlRenderer {
         self.buffers.remove(&buffer.0);
     }
 
-    fn load_pipeline(&mut self, pipeline: Pipeline) -> PipelineId {
-        todo!()
+    fn load_pipeline(&mut self, pipeline: Pipeline) -> Result<PipelineId> {
+        let id = self.id;
+        self.id += 1;
+
+        self.pipelines
+            .insert(id, GlPipeline::new(pipeline, &self.gl)?);
+
+        Ok(PipelineId(id))
     }
 
     fn unload_pipeline(&mut self, pipeline: PipelineId) {
-        todo!()
+        self.pipelines.remove(&pipeline.0);
+    }
+}
+
+struct GlPipeline {
+    program_id: GLuint,
+    vao: GLuint,
+}
+
+impl GlPipeline {
+    fn new(pipeline: Pipeline, gl: &gl::Gl) -> Result<Self, GlError> {
+        let shaders = vec![
+            (pipeline.vertex_shader, gl::VERTEX_SHADER),
+            (pipeline.fragment_shader, gl::FRAGMENT_SHADER),
+        ];
+
+        // convert shader source code into gl shader ids
+        let shaders = shaders
+            .into_iter()
+            .filter_map(|(source, kind)| Some((source?, kind)))
+            .map::<Result<_, GlError>, _>(|(source, kind)| {
+                Ok((
+                    CString::new(source).map_err(|e| GlError::ShaderNullByte { message: e })?,
+                    kind,
+                ))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|(source, kind)| shader_from_source(gl, &source, kind))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let program_id = program_from_shaders(gl, &shaders)?;
+
+        // Create a vao to store the vertex attribute types using OpenGL DSA functions
+        // If not using DSA then this would depend on vertex buffers being bound,
+        // so would need to be re-done every time the vertex buffers bound are
+        // changed, or every draw call if not cached.  That cahching could be
+        // implemented if a version of OpenGl older than 4.5 is needed to be supported
+        let mut vao = 0;
+        unsafe {
+            gl.GenVertexArrays(1, &mut vao);
+        }
+
+        for (i, attribute) in pipeline.attributes.iter().enumerate() {
+            let attribute_type = match attribute.item_type {
+                AttributeType::I8 => gl::BYTE,
+                AttributeType::I16 => gl::SHORT,
+                AttributeType::F32 => gl::FLOAT,
+                AttributeType::F64 => gl::DOUBLE,
+                AttributeType::U8 => gl::UNSIGNED_BYTE,
+                AttributeType::U16 => gl::UNSIGNED_SHORT,
+                AttributeType::U32 => gl::UNSIGNED_INT,
+            };
+
+            unsafe {
+                gl.EnableVertexArrayAttrib(vao, attribute.location);
+                gl.VertexArrayAttribFormat(
+                    vao,
+                    attribute.location,
+                    attribute.count as _,
+                    attribute_type,
+                    attribute.normalised as _,
+                    0,
+                );
+                gl.VertexArrayAttribBinding(vao, attribute.location, i as _);
+            }
+        }
+
+        Ok(GlPipeline { program_id, vao })
     }
 }
 
@@ -220,4 +317,89 @@ extern "system" fn gl_debug_log(
             _ => "Other",
         }
     );
+}
+
+/// Create a new OpenGL shader from glsl source code
+fn shader_from_source(gl: &gl::Gl, source: &CStr, kind: GLuint) -> Result<GLuint, GlError> {
+    let id = unsafe { gl.CreateShader(kind) };
+
+    unsafe {
+        gl.ShaderSource(id, 1, &source.as_ptr(), std::ptr::null());
+        gl.CompileShader(id);
+    }
+
+    let mut success: GLint = 1;
+    unsafe {
+        gl.GetShaderiv(id, gl::COMPILE_STATUS, &mut success);
+    }
+
+    if success == 0 {
+        let mut len = 0;
+        unsafe {
+            gl.GetShaderiv(id, gl::INFO_LOG_LENGTH, &mut len);
+        }
+
+        let error = create_whitespace_cstring(len as usize)?;
+
+        unsafe {
+            gl.GetShaderInfoLog(id, len, std::ptr::null_mut(), error.as_ptr() as *mut GLchar);
+        }
+
+        return Err(GlError::ShaderCompilation {
+            message: error.to_string_lossy().to_string(),
+        });
+    }
+
+    Ok(id)
+}
+
+/// Create a space filled CString of given length
+fn create_whitespace_cstring(len: usize) -> Result<CString, GlError> {
+    let mut buffer: Vec<u8> = Vec::with_capacity(len + 1);
+    buffer.extend([b' '].iter().cycle().take(len));
+    CString::new(buffer).map_err(|_| GlError::ErrorBuffer)
+}
+
+/// Creates an OpenGl shader program from shader IDs
+fn program_from_shaders(gl: &gl::Gl, shaders: &[GLuint]) -> Result<GLuint, GlError> {
+    let program_id = unsafe { gl.CreateProgram() };
+
+    for &shader in shaders {
+        unsafe { gl.AttachShader(program_id, shader) }
+    }
+
+    unsafe { gl.LinkProgram(program_id) };
+
+    let mut success = 1;
+    unsafe {
+        gl.GetProgramiv(program_id, gl::LINK_STATUS, &mut success);
+    }
+
+    if success == 0 {
+        let mut len = 0;
+        unsafe {
+            gl.GetProgramiv(program_id, gl::INFO_LOG_LENGTH, &mut len);
+        }
+
+        let error = create_whitespace_cstring(len as usize)?;
+
+        unsafe {
+            gl.GetProgramInfoLog(
+                program_id,
+                len,
+                std::ptr::null_mut(),
+                error.as_ptr() as *mut GLchar,
+            )
+        }
+
+        return Err(GlError::ShaderLink {
+            message: error.to_string_lossy().to_string(),
+        });
+    }
+
+    for &shader in shaders {
+        unsafe { gl.DetachShader(program_id, shader) }
+    }
+
+    Ok(program_id)
 }
