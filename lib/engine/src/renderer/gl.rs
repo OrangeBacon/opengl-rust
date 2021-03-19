@@ -1,4 +1,4 @@
-use super::Renderer;
+use super::backend::RendererBackend;
 
 pub struct GlRenderer {
     gl: gl::Gl,
@@ -16,7 +16,7 @@ impl GlRenderer {
     }
 }
 
-impl Renderer for GlRenderer {
+impl RendererBackend for GlRenderer {
     fn clear(&mut self, r: f32, g: f32, b: f32) {
         unsafe {
             self.gl.ClearColor(r, g, b, 1.0);

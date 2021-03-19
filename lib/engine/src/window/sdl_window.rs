@@ -1,7 +1,7 @@
 use anyhow::Result;
 use thiserror::Error;
 
-use crate::renderer::gl_render::GlRenderer;
+use crate::renderer::gl::GlRenderer;
 
 use super::{
     event::{Event, MouseButton, MouseButtonState},
@@ -211,7 +211,7 @@ impl Window for SdlWindow {
         }
     }
 
-    fn renderer(&mut self) -> Result<Box<dyn crate::renderer::Renderer>> {
+    fn renderer(&mut self) -> Result<Box<dyn crate::renderer::backend::RendererBackend>> {
         // create a new opengl context
         // this makes the new context current
         let ctx = self

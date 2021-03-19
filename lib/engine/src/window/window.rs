@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::renderer::Renderer;
+use crate::renderer::backend::RendererBackend;
 
 use super::{event::Event, input::InputState};
 
@@ -70,7 +70,7 @@ pub trait Window {
     fn set_cursor(&mut self, cursor: SystemCursors);
 
     /// Get a rendering context
-    fn renderer(&mut self) -> Result<Box<dyn Renderer>>;
+    fn renderer(&mut self) -> Result<Box<dyn RendererBackend>>;
 }
 
 /// Wrapper around the system clipboard

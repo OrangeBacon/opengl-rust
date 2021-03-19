@@ -29,7 +29,7 @@ pub struct EngineState {
     pub window: Box<dyn Window>,
 
     /// The current renderer
-    renderer: Box<dyn Renderer>,
+    renderer: Renderer,
 }
 
 // For now i'm allowing direct access to the renderer.  When all commands use
@@ -37,16 +37,16 @@ pub struct EngineState {
 // allowing multi-threading.  That cannot be done now due to raw gl calls being
 // mixed with renderer calls.
 impl Deref for EngineState {
-    type Target = dyn Renderer;
+    type Target = Renderer;
 
     fn deref(&self) -> &Self::Target {
-        self.renderer.as_ref()
+        &self.renderer
     }
 }
 
 impl DerefMut for EngineState {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.renderer.as_mut()
+        &mut self.renderer
     }
 }
 
@@ -133,7 +133,7 @@ impl MainLoop {
 
         let state = EngineState {
             gl,
-            renderer: window.renderer()?,
+            renderer: Renderer::new(window.renderer()?),
             window: Box::new(window),
             inputs: Default::default(),
             run_time: 0.0,
