@@ -1,4 +1,5 @@
 use anyhow::Result;
+use nalgebra_glm as glm;
 
 use super::backend::{IndexBufferId, PipelineId, RendererBackend, TextureId, VertexBufferId};
 use crate::texture::Texture;
@@ -76,6 +77,12 @@ impl Renderer {
     #[inline(always)]
     pub fn unload_pipeline(&mut self, pipeline: PipelineId) {
         self.backend.unload_pipeline(pipeline)
+    }
+
+    /// Bind a pipeline so it can be used for drawing
+    #[inline(always)]
+    pub fn bind_pipeline(&mut self, pipeline: PipelineId) -> BoundPipeline {
+        BoundPipeline::new(self, pipeline)
     }
 }
 
@@ -158,6 +165,7 @@ impl VertexAttribute {
 }
 
 /// The type of a vertex attribute, enum names correspond to the equivalent rust types
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub enum AttributeType {
     I8,
     I16,
@@ -166,4 +174,60 @@ pub enum AttributeType {
     U8,
     U16,
     U32,
+}
+
+pub struct BoundPipeline<'a> {
+    renderer: &'a mut Renderer,
+    pipeline: PipelineId,
+}
+
+impl<'a> BoundPipeline<'a> {
+    pub fn new(renderer: &'a mut Renderer, pipeline: PipelineId) -> Self {
+        renderer.backend.bind_pipeline(pipeline);
+        Self { renderer, pipeline }
+    }
+
+    pub fn bind_matrix(&mut self, name: &str, matrix: glm::Mat4) {
+        self.renderer
+            .backend
+            .pipeline_bind_matrix(self.pipeline, name, matrix);
+    }
+
+    pub fn bind_texture(&mut self, name: &str, texture: TextureId) {
+        self.renderer
+            .backend
+            .pipeline_bind_texture(self.pipeline, name, texture);
+    }
+
+    pub fn bind_vertex_arrays(
+        &mut self,
+        buffers: &[VertexBufferId],
+        offsets: &[usize],
+        strides: &[usize],
+    ) {
+        self.renderer
+            .backend
+            .pipeline_bind_vertex_arrays(self.pipeline, buffers, offsets, strides);
+    }
+
+    pub fn draw(&mut self, mode: DrawingMode, start: u64, count: u64) {}
+
+    pub fn draw_indicies(&mut self, mode: DrawingMode) {}
+}
+
+impl<'a> Drop for BoundPipeline<'a> {
+    fn drop(&mut self) {
+        self.renderer.backend.unbind_pipeline(self.pipeline);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DrawingMode {
+    Points,
+    Lines,
+    LineLoop,
+    LineStrip,
+    Triangles,
+    TriangleStrip,
+    TriangleFan,
 }

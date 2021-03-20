@@ -1,4 +1,5 @@
 use anyhow::Result;
+use nalgebra_glm as glm;
 
 use super::Pipeline;
 use crate::texture::Texture;
@@ -6,16 +7,16 @@ use crate::texture::Texture;
 /// type inside all *Id tuple structs
 pub type IdType = u64;
 
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct TextureId(pub(crate) IdType);
 
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct VertexBufferId(pub(crate) IdType);
 
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct IndexBufferId(pub(crate) IdType);
 
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
 pub struct PipelineId(pub(crate) IdType);
 
 /// The methods required for each renderer backend to implement
@@ -52,4 +53,25 @@ pub trait RendererBackend {
 
     /// Unloads a pipeline
     fn unload_pipeline(&mut self, pipeline: PipelineId);
+
+    /// Bind a pipeline so that vertex buffers and uniforms can be bound to it
+    fn bind_pipeline(&mut self, pipeline: PipelineId);
+
+    /// Unbind a bound pipeline
+    fn unbind_pipeline(&mut self, pipeline: PipelineId);
+
+    /// Bind a 4x4 matrix to a pipeline
+    fn pipeline_bind_matrix(&mut self, pipeline: PipelineId, name: &str, matrix: glm::Mat4);
+
+    /// Bind a texture to a pipeline
+    fn pipeline_bind_texture(&mut self, pipeline: PipelineId, name: &str, texture: TextureId);
+
+    /// Bind vertex arrays with a given offset and stride to a bound pipeline
+    fn pipeline_bind_vertex_arrays(
+        &mut self,
+        pipeline: PipelineId,
+        buffers: &[VertexBufferId],
+        offsets: &[usize],
+        strides: &[usize],
+    );
 }

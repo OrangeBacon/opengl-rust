@@ -147,6 +147,37 @@ impl RendererBackend for GlRenderer {
     fn unload_pipeline(&mut self, pipeline: PipelineId) {
         self.pipelines.remove(&pipeline.0);
     }
+
+    fn bind_pipeline(&mut self, pipeline: PipelineId) {
+        todo!()
+    }
+
+    fn unbind_pipeline(&mut self, pipeline: PipelineId) {
+        todo!()
+    }
+
+    fn pipeline_bind_matrix(
+        &mut self,
+        pipeline: PipelineId,
+        name: &str,
+        matrix: nalgebra_glm::Mat4,
+    ) {
+        todo!()
+    }
+
+    fn pipeline_bind_texture(&mut self, pipeline: PipelineId, name: &str, texture: TextureId) {
+        todo!()
+    }
+
+    fn pipeline_bind_vertex_arrays(
+        &mut self,
+        pipeline: PipelineId,
+        buffers: &[VertexBufferId],
+        offsets: &[usize],
+        strides: &[usize],
+    ) {
+        todo!()
+    }
 }
 
 struct GlPipeline {
