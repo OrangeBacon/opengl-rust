@@ -44,6 +44,10 @@ impl Buffer {
             );
         }
     }
+
+    pub fn id(&self) -> GLuint {
+        self.vbo
+    }
 }
 
 impl Drop for Buffer {

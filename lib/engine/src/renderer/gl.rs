@@ -29,6 +29,15 @@ enum GlError {
 
     #[error("Error getting buffer for error message, unable to display error")]
     ErrorBuffer,
+
+    #[error("Unable to finf a free active texture unit")]
+    TextureUnitsFull,
+
+    #[error("Cannot bind texture to unbound pipeline")]
+    PipelineNotBound,
+
+    #[error("Texture is not currently loaded, cannot bind it to a pipeline")]
+    TextureUnloaded,
 }
 
 pub struct GlRenderer {
@@ -39,6 +48,9 @@ pub struct GlRenderer {
     textures: HashMap<IdType, GlTexture>,
     buffers: HashMap<IdType, Buffer>,
     pipelines: HashMap<IdType, GlPipeline>,
+
+    texture_units: Vec<bool>,
+    active_textures: HashMap<PipelineId, Vec<usize>>,
 }
 
 impl GlRenderer {
@@ -49,12 +61,26 @@ impl GlRenderer {
 
         unsafe { gl.Enable(gl::DEPTH_TEST) }
 
+        // get maximum number of active texture units
+        let mut texture_units = 0;
+        unsafe {
+            gl.GetIntegerv(gl::MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut texture_units);
+        }
+
+        let mut texture_units = vec![false; texture_units as _];
+
+        // texture unit 0 is used for image loading so don't allow pipelines to
+        // use it ever
+        texture_units[0] = false;
+
         GlRenderer {
             gl,
             id: 0,
             textures: HashMap::new(),
             buffers: HashMap::new(),
             pipelines: HashMap::new(),
+            active_textures: HashMap::new(),
+            texture_units,
         }
     }
 }
@@ -149,11 +175,11 @@ impl RendererBackend for GlRenderer {
     }
 
     fn bind_pipeline(&mut self, pipeline: PipelineId) {
-        todo!()
+        self.active_textures.insert(pipeline, vec![]);
     }
 
     fn unbind_pipeline(&mut self, pipeline: PipelineId) {
-        todo!()
+        self.active_textures.remove(&pipeline);
     }
 
     fn pipeline_bind_matrix(
@@ -162,11 +188,54 @@ impl RendererBackend for GlRenderer {
         name: &str,
         matrix: nalgebra_glm::Mat4,
     ) {
-        todo!()
+        if let Ok(name) = CString::new(name) {
+            let pipeline = self.pipelines[&pipeline.0].program_id;
+            unsafe {
+                let loc = self.gl.GetUniformLocation(pipeline, name.as_ptr());
+                self.gl
+                    .UniformMatrix4fv(loc, 1, gl::FALSE, matrix.as_slice().as_ptr());
+            }
+        }
     }
 
-    fn pipeline_bind_texture(&mut self, pipeline: PipelineId, name: &str, texture: TextureId) {
-        todo!()
+    fn pipeline_bind_texture(
+        &mut self,
+        pipeline: PipelineId,
+        name: &str,
+        texture: TextureId,
+    ) -> Result<()> {
+        // get the uniform's name
+        let name = CString::new(name)?;
+
+        // find the first avaliable texture unit
+        let (texture_unit, _) = self
+            .texture_units
+            .iter()
+            .enumerate()
+            .find(|&(_, &in_use)| in_use)
+            .ok_or(GlError::TextureUnitsFull)?;
+
+        // tell the renderer that a texture unit is in use
+        self.texture_units[texture_unit] = true;
+        self.active_textures
+            .get_mut(&pipeline)
+            .ok_or(GlError::PipelineNotBound)?
+            .push(texture_unit);
+
+        // tell the renderer which pipeline owns a particular texture unit
+        self.textures
+            .get_mut(&texture.0)
+            .ok_or(GlError::TextureUnloaded)?
+            .set_bound(texture_unit as _);
+
+        // tell the shader about the texture unit
+        let pipeline = self.pipelines[&pipeline.0].program_id;
+        unsafe {
+            let loc = self.gl.GetUniformLocation(pipeline, name.as_ptr());
+            self.gl.Uniform1i(loc, texture_unit as _);
+        }
+
+        Ok(())
     }
 
     fn pipeline_bind_vertex_arrays(
@@ -176,7 +245,21 @@ impl RendererBackend for GlRenderer {
         offsets: &[usize],
         strides: &[usize],
     ) {
-        todo!()
+        let buffers: Vec<_> = buffers
+            .iter()
+            .map(|&buffer| self.buffers[&buffer.0].id())
+            .collect();
+
+        unsafe {
+            self.gl.VertexArrayVertexBuffers(
+                self.pipelines[&pipeline.0].vao,
+                0,
+                buffers.len() as _,
+                buffers.as_ptr(),
+                offsets.as_ptr() as _,
+                strides.as_ptr() as _,
+            );
+        }
     }
 }
 

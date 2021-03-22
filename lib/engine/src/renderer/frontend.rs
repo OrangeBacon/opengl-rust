@@ -193,10 +193,10 @@ impl<'a> BoundPipeline<'a> {
             .pipeline_bind_matrix(self.pipeline, name, matrix);
     }
 
-    pub fn bind_texture(&mut self, name: &str, texture: TextureId) {
+    pub fn bind_texture(&mut self, name: &str, texture: TextureId) -> Result<()> {
         self.renderer
             .backend
-            .pipeline_bind_texture(self.pipeline, name, texture);
+            .pipeline_bind_texture(self.pipeline, name, texture)
     }
 
     pub fn bind_vertex_arrays(

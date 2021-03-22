@@ -64,9 +64,15 @@ pub trait RendererBackend {
     fn pipeline_bind_matrix(&mut self, pipeline: PipelineId, name: &str, matrix: glm::Mat4);
 
     /// Bind a texture to a pipeline
-    fn pipeline_bind_texture(&mut self, pipeline: PipelineId, name: &str, texture: TextureId);
+    fn pipeline_bind_texture(
+        &mut self,
+        pipeline: PipelineId,
+        name: &str,
+        texture: TextureId,
+    ) -> Result<()>;
 
     /// Bind vertex arrays with a given offset and stride to a bound pipeline
+    /// offset and stride are both measured in bytes.
     fn pipeline_bind_vertex_arrays(
         &mut self,
         pipeline: PipelineId,

@@ -86,6 +86,7 @@ impl Texture {
 pub struct GlTexture {
     gl: gl::Gl,
     id: GLuint,
+    active_index: GLuint,
 }
 
 impl GlTexture {
@@ -121,12 +122,29 @@ impl GlTexture {
         Self {
             gl: gl.clone(),
             id: texture,
+            active_index: 0,
         }
     }
 
     /// Bind this texture to the current shader program.
     pub fn bind(&self, index: GLuint) -> BoundGlTexture {
         BoundGlTexture::new(&self, index)
+    }
+
+    pub fn set_bound(&mut self, index: GLuint) {
+        self.active_index = index;
+        unsafe {
+            self.gl.ActiveTexture(gl::TEXTURE0 + index);
+            self.gl.BindTexture(gl::TEXTURE_2D, self.id);
+        }
+    }
+
+    pub fn set_unbound(&mut self) {
+        unsafe {
+            self.gl.ActiveTexture(gl::TEXTURE0 + self.active_index);
+            self.gl.BindTexture(gl::TEXTURE_2D, 0);
+        }
+        self.active_index = 0;
     }
 }
 
