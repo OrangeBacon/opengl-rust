@@ -210,9 +210,31 @@ impl<'a> BoundPipeline<'a> {
             .pipeline_bind_vertex_arrays(self.pipeline, buffers, offsets, strides);
     }
 
-    pub fn draw(&mut self, mode: DrawingMode, start: u64, count: u64) {}
+    pub fn draw(&mut self, mode: DrawingMode, start: u64, count: u64) {
+        self.renderer
+            .backend
+            .draw(self.pipeline, mode, start, count);
+    }
 
-    pub fn draw_indicies(&mut self, mode: DrawingMode) {}
+    /// draw indexed verticies using a pipeline
+    /// draws count verticies
+    pub fn draw_indicies(
+        &mut self,
+        mode: DrawingMode,
+        indices: IndexBufferId,
+        index_type: IndexType,
+        index_offset: usize,
+        count: usize,
+    ) {
+        self.renderer.backend.draw_indicies(
+            self.pipeline,
+            mode,
+            indices,
+            index_type,
+            index_offset,
+            count,
+        );
+    }
 }
 
 impl<'a> Drop for BoundPipeline<'a> {
@@ -230,4 +252,11 @@ pub enum DrawingMode {
     Triangles,
     TriangleStrip,
     TriangleFan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IndexType {
+    U8,
+    U16,
+    U32,
 }

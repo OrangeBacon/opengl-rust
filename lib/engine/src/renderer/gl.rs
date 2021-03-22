@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     backend::{IdType, IndexBufferId, PipelineId, RendererBackend, TextureId, VertexBufferId},
-    AttributeType, Pipeline,
+    AttributeType, DrawingMode, IndexType, Pipeline,
 };
 
 #[derive(Debug, Error)]
@@ -71,7 +71,7 @@ impl GlRenderer {
 
         // texture unit 0 is used for image loading so don't allow pipelines to
         // use it ever
-        texture_units[0] = false;
+        texture_units[0] = true;
 
         GlRenderer {
             gl,
@@ -180,6 +180,12 @@ impl RendererBackend for GlRenderer {
 
     fn unbind_pipeline(&mut self, pipeline: PipelineId) {
         self.active_textures.remove(&pipeline);
+
+        for &texture_unit in &self.active_textures[&pipeline] {
+            self.texture_units[texture_unit] = false;
+        }
+
+        self.active_textures.remove(&pipeline);
     }
 
     fn pipeline_bind_matrix(
@@ -261,6 +267,59 @@ impl RendererBackend for GlRenderer {
             );
         }
     }
+
+    fn draw(&mut self, pipeline: PipelineId, mode: DrawingMode, start: u64, count: u64) {
+        self.pipelines[&pipeline.0].bind(&self.gl);
+
+        let mode = match mode {
+            DrawingMode::Points => gl::POINTS,
+            DrawingMode::Lines => gl::LINES,
+            DrawingMode::LineLoop => gl::LINE_LOOP,
+            DrawingMode::LineStrip => gl::LINE_STRIP,
+            DrawingMode::Triangles => gl::TRIANGLES,
+            DrawingMode::TriangleStrip => gl::TRIANGLE_STRIP,
+            DrawingMode::TriangleFan => gl::TRIANGLE_FAN,
+        };
+
+        unsafe {
+            self.gl.DrawArrays(mode, start as _, count as _);
+        }
+    }
+
+    fn draw_indicies(
+        &mut self,
+        pipeline: PipelineId,
+        mode: DrawingMode,
+        indices: IndexBufferId,
+        index_type: IndexType,
+        index_offset: usize,
+        count: usize,
+    ) {
+        self.pipelines[&pipeline.0].bind(&self.gl);
+
+        let mode = match mode {
+            DrawingMode::Points => gl::POINTS,
+            DrawingMode::Lines => gl::LINES,
+            DrawingMode::LineLoop => gl::LINE_LOOP,
+            DrawingMode::LineStrip => gl::LINE_STRIP,
+            DrawingMode::Triangles => gl::TRIANGLES,
+            DrawingMode::TriangleStrip => gl::TRIANGLE_STRIP,
+            DrawingMode::TriangleFan => gl::TRIANGLE_FAN,
+        };
+
+        let index_type = match index_type {
+            IndexType::U8 => gl::UNSIGNED_BYTE,
+            IndexType::U16 => gl::UNSIGNED_SHORT,
+            IndexType::U32 => gl::UNSIGNED_INT,
+        };
+
+        self.buffers[&indices.0].bind();
+
+        unsafe {
+            self.gl
+                .DrawElements(mode, count as _, index_type, index_offset as _);
+        }
+    }
 }
 
 struct GlPipeline {
@@ -328,6 +387,12 @@ impl GlPipeline {
         }
 
         Ok(GlPipeline { program_id, vao })
+    }
+
+    fn bind(&self, gl: &gl::Gl) {
+        unsafe {
+            gl.BindVertexArray(self.vao);
+        }
     }
 }
 

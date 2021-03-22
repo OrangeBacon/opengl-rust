@@ -1,7 +1,7 @@
 use anyhow::Result;
 use nalgebra_glm as glm;
 
-use super::Pipeline;
+use super::{DrawingMode, IndexType, Pipeline};
 use crate::texture::Texture;
 
 /// type inside all *Id tuple structs
@@ -79,5 +79,19 @@ pub trait RendererBackend {
         buffers: &[VertexBufferId],
         offsets: &[usize],
         strides: &[usize],
+    );
+
+    /// draw verticies using a pipeline
+    fn draw(&mut self, pipeline: PipelineId, mode: DrawingMode, start: u64, count: u64);
+
+    /// draw indexed verticies
+    fn draw_indicies(
+        &mut self,
+        pipeline: PipelineId,
+        mode: DrawingMode,
+        indices: IndexBufferId,
+        index_type: IndexType,
+        index_offset: usize,
+        count: usize,
     );
 }
