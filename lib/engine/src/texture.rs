@@ -43,7 +43,7 @@ impl Default for Sampler {
     }
 }
 
-/// A loaded texture, stored on the GPU.  When dropped, the vram is released.
+/// A decoded image file, stored on the CPU
 #[derive(Debug)]
 pub struct Texture {
     image: ImageBuffer<Rgb<u8>, Vec<u8>>,

@@ -29,7 +29,7 @@ pub struct EngineState {
     pub window: Box<dyn Window>,
 
     /// The current renderer
-    renderer: Renderer,
+    pub renderer: Renderer,
 }
 
 // For now i'm allowing direct access to the renderer.  When all commands use

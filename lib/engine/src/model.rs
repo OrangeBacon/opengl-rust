@@ -3,16 +3,16 @@ use std::{collections::HashMap, convert::TryInto};
 use crate::{
     bound::Bounds,
     buffer, gltf,
+    renderer::{self, IndexBufferId, Renderer, VertexBufferId},
     resources::{Error as ResourceError, Resources},
     texture,
-    texture::Texture,
+    texture::{GlTexture, Texture},
     DynamicShader, EngineStateRef, Program,
 };
 use anyhow::Result;
 use gl::types::{GLenum, GLsizei};
 use nalgebra_glm as glm;
 use slotmap::{DefaultKey, SlotMap};
-use texture::GlTexture;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -118,22 +118,30 @@ pub struct Model {
     buffer_view_types: Vec<BufferViewType>,
 
     pub(crate) gltf: gltf::Model,
+
+    gpu_buffers: Vec<GPUBuffer>,
+    gpu_textures: Vec<renderer::TextureId>,
+    gpu_pipelines: Vec<renderer::PipelineId>,
 }
 
 impl Model {
-    pub fn from_res(res: &Resources, path: &str) -> Result<Self, Error> {
+    pub fn from_res(res: &Resources, path: &str, renderer: &mut Renderer) -> Result<Self, Error> {
         let parent = res.extend_file_root(path).ok_or(Error::RootPath {
             inner: path.to_string(),
         })?;
 
         let gltf = gltf::Model::from_res(res, path).map_err(|e| Error::Gltf { inner: e })?;
 
-        let model = Model::from_gltf(gltf, &parent)?;
+        let model = Model::from_gltf(gltf, &parent, renderer)?;
 
         Ok(model)
     }
 
-    pub fn from_gltf(mut gltf: gltf::Model, res: &Resources) -> Result<Self, Error> {
+    pub fn from_gltf(
+        mut gltf: gltf::Model,
+        res: &Resources,
+        renderer: &mut Renderer,
+    ) -> Result<Self, Error> {
         let mut default_buffer = gltf.default_buffer.take();
 
         let buffers = gltf
@@ -165,11 +173,15 @@ impl Model {
             scenes,
             gltf,
             textures,
-            buffer_view_types: vec![],
+            buffer_view_types: Vec::with_capacity(0),
+            gpu_buffers: Vec::with_capacity(0),
+            gpu_textures: Vec::with_capacity(0),
+            gpu_pipelines: Vec::with_capacity(0),
         };
 
         model.check_load_accessors()?;
         model.buffer_view_types = BufferViewType::derive_types(&model.gltf)?;
+        model.load_gpu(renderer, res)?;
 
         Ok(model)
     }
@@ -451,6 +463,38 @@ impl Model {
                 got: view.byte_offset + view.byte_length,
                 max: buffer_len,
             })?)
+    }
+
+    /// load a 3d model onto the GPU
+    fn load_gpu(&mut self, renderer: &mut Renderer, res: &Resources) -> Result<(), Error> {
+        self.gpu_buffers = self
+            .gltf
+            .buffer_views
+            .iter()
+            .zip(&self.buffer_view_types)
+            .map(|(view, &view_type)| GPUBuffer::new(renderer, self, view, view_type))
+            .collect();
+
+        let images = self
+            .gltf
+            .images
+            .iter()
+            .map(|img| Model::load_image(img, &res, &self.gltf, &self.buffers))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let textures = self
+            .gltf
+            .textures
+            .iter()
+            .map(|tex| Model::load_texture(tex, &self.gltf, &images))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        self.gpu_textures = textures
+            .into_iter()
+            .map(|tex| renderer.load_texture(tex))
+            .collect();
+
+        Ok(())
     }
 }
 
@@ -854,6 +898,35 @@ impl Node {
         }
 
         bound
+    }
+}
+
+/// A loaded buffer, either an index buffer, a vertex buffer or neither for specifying
+/// a CPU only buffer
+#[derive(Debug)]
+enum GPUBuffer {
+    Index(IndexBufferId),
+    Vertex(VertexBufferId),
+    None,
+}
+
+impl GPUBuffer {
+    fn new(
+        renderer: &mut Renderer,
+        model: &Model,
+        view: &gltf::BufferView,
+        view_type: BufferViewType,
+    ) -> Self {
+        let buffer = &model.buffers[view.buffer];
+        let data = &buffer.data[view.byte_offset..(view.byte_offset + view.byte_length)];
+
+        match view_type {
+            BufferViewType::ArrayBuffer => GPUBuffer::Vertex(renderer.load_vertex_buffer(data)),
+            BufferViewType::ElementArrayBuffer => {
+                GPUBuffer::Index(renderer.load_index_buffer(data))
+            }
+            _ => GPUBuffer::None,
+        }
     }
 }
 

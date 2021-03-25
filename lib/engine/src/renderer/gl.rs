@@ -12,8 +12,8 @@ use crate::{
 };
 
 use super::{
-    backend::{IdType, IndexBufferId, PipelineId, RendererBackend, TextureId, VertexBufferId},
-    AttributeType, DrawingMode, IndexType, Pipeline,
+    backend::RendererBackend, AttributeType, DrawingMode, IdType, IndexBufferId, IndexType,
+    Pipeline, PipelineId, TextureId, VertexBufferId,
 };
 
 #[derive(Debug, Error)]

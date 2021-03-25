@@ -1,23 +1,10 @@
 use anyhow::Result;
 use nalgebra_glm as glm;
 
-use super::{DrawingMode, IndexType, Pipeline};
+use super::{
+    DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, TextureId, VertexBufferId,
+};
 use crate::texture::Texture;
-
-/// type inside all *Id tuple structs
-pub type IdType = u64;
-
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
-pub struct TextureId(pub(crate) IdType);
-
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
-pub struct VertexBufferId(pub(crate) IdType);
-
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
-pub struct IndexBufferId(pub(crate) IdType);
-
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
-pub struct PipelineId(pub(crate) IdType);
 
 /// The methods required for each renderer backend to implement
 pub trait RendererBackend {

@@ -1,8 +1,23 @@
 use anyhow::Result;
 use nalgebra_glm as glm;
 
-use super::backend::{IndexBufferId, PipelineId, RendererBackend, TextureId, VertexBufferId};
+use super::backend::RendererBackend;
 use crate::texture::Texture;
+
+/// type inside all *Id tuple structs
+pub type IdType = u64;
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct TextureId(pub(crate) IdType);
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct VertexBufferId(pub(crate) IdType);
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct IndexBufferId(pub(crate) IdType);
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct PipelineId(pub(crate) IdType);
 
 pub struct Renderer {
     backend: Box<dyn RendererBackend>,

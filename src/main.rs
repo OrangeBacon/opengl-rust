@@ -16,7 +16,7 @@ struct Triangle {
 }
 
 impl Triangle {
-    fn swap_model(&mut self, state: &EngineStateRef) -> Option<()> {
+    fn swap_model(&mut self, state: &mut EngineStateRef) -> Option<()> {
         let result = FileDialog::new()
             .add_filter("glTF Model", &["gltf", "glb"])
             .show_open_single_file();
@@ -31,7 +31,7 @@ impl Triangle {
 
         let res = Resources::from_path(&folder);
 
-        let model = match Model::from_res(&res, file) {
+        let model = match Model::from_res(&res, file, &mut state.renderer) {
             Ok(model) => model,
             Err(e) => {
                 println!("error: {}", e);
@@ -76,7 +76,11 @@ impl Layer for Triangle {
     fn new(state: &mut EngineStateRef) -> Result<Self> {
         let res = Resources::from_exe_path(Path::new("assets"))?;
 
-        let model = Model::from_res(&res, "sea_keep_lonely_watcher/scene.gltf")?;
+        let model = Model::from_res(
+            &res,
+            "sea_keep_lonely_watcher/scene.gltf",
+            &mut state.renderer,
+        )?;
         let gl_data = GLModel::new(&model, &state.gl)?;
 
         let (width, height) = state.window.size();
