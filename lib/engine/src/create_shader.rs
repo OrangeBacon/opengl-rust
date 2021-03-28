@@ -1,18 +1,15 @@
-use std::ffi::CString;
-
 use gltf::Type;
 
-use crate::{
-    gltf,
-    model::Error,
-    model::{GLBuffer, GLModel, Model},
-    Program, Shader,
-};
+use crate::{gltf, model::Model, model::ModelError, renderer::Pipeline};
 
 pub struct DynamicShader;
 
 impl DynamicShader {
-    pub fn new(gl: &gl::Gl, prim: &gltf::Primitive, model: &Model) -> Result<Program, Error> {
+    pub fn new(
+        pipeline: &mut Pipeline,
+        prim: &gltf::Primitive,
+        model: &Model,
+    ) -> Result<usize, ModelError> {
         let components: Vec<Attribute> = prim
             .attributes
             .iter()
@@ -30,33 +27,24 @@ impl DynamicShader {
         let vert = DynamicShader::create_vertex(&components, prim, model);
         let frag = DynamicShader::create_fragment(&components, prim, model);
 
-        let vert = CString::new(vert).map_err(|_| Error::NullShader)?;
-        let frag = CString::new(frag).map_err(|_| Error::NullShader)?;
-
-        let vert = Shader::from_vert(gl, &vert).map_err(|e| Error::ShaderCompile { error: e })?;
-        let frag = Shader::from_frag(gl, &frag).map_err(|e| Error::ShaderCompile { error: e })?;
-
-        let program =
-            Program::from_shaders(gl, &[vert, frag]).map_err(|e| Error::ShaderLink { error: e })?;
-
-        Ok(program)
+        pipeline.from_vertex_shader(vert).from_frag_shader(frag);
+        Self::set_attribs(pipeline, prim, model)
     }
 
-    pub fn set_attribs(
-        gl: &gl::Gl,
-        buffers: &[GLBuffer],
+    fn set_attribs(
+        pipeline: &mut Pipeline,
         prim: &gltf::Primitive,
         model: &Model,
-    ) -> Result<usize, Error> {
+    ) -> Result<usize, ModelError> {
         if !prim.attributes.contains_key("POSITION") {
-            return Err(Error::NoPositions);
+            return Err(ModelError::NoPositions);
         }
 
         let counts = prim
             .attributes
             .iter()
             .enumerate()
-            .map(|(idx, (_, &attr))| Self::attrib(gl, buffers, model, attr, idx as u32))
+            .map(|(idx, (_, &attr))| Self::attrib(pipeline, model, attr, idx as u32))
             .collect::<Result<Vec<_>, _>>()?;
 
         let zero = counts[0];
@@ -64,38 +52,40 @@ impl DynamicShader {
         let counts_equal = counts.iter().any(|&v| v != zero);
 
         if counts_equal {
-            Err(Error::AttribLen)
+            Err(ModelError::AttribLen)
         } else {
             Ok(zero)
         }
     }
 
     fn attrib(
-        gl: &gl::Gl,
-        buffers: &[GLBuffer],
+        pipeline: &mut Pipeline,
         model: &Model,
         attr: i32,
         index: u32,
-    ) -> Result<usize, Error> {
-        let accessor = model
-            .gltf
-            .accessors
-            .get(attr as usize)
-            .ok_or_else(|| Error::BadIndex {
-                array: "accessors",
-                max: model.gltf.accessors.len(),
-                got: attr as usize,
-            })?;
+    ) -> Result<usize, ModelError> {
+        let accessor =
+            model
+                .gltf
+                .accessors
+                .get(attr as usize)
+                .ok_or_else(|| ModelError::BadIndex {
+                    array: "accessors",
+                    max: model.gltf.accessors.len(),
+                    got: attr as usize,
+                })?;
 
-        let buf = accessor.buffer_view.ok_or_else(|| Error::NoSource)?;
+        let buf = accessor.buffer_view.ok_or_else(|| ModelError::NoSource)?;
 
-        let buf = buffers.get(buf).ok_or_else(|| Error::BadIndex {
+        let buffers = &model.gpu_buffers;
+
+        let buf = buffers.get(buf).ok_or_else(|| ModelError::BadIndex {
             array: "views",
             max: buffers.len(),
             got: buf,
         })?;
 
-        GLModel::load_accessor(gl, buf, accessor, index)?;
+        Model::load_accessor(pipeline, buf, accessor, index)?;
 
         Ok(accessor.count)
     }

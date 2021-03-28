@@ -15,6 +15,7 @@ use serde_json::Value;
 use serde_repr::Deserialize_repr;
 use thiserror::Error;
 
+use crate::renderer::AttributeType;
 use crate::resources::{Error as ResourceError, Resources};
 
 #[derive(Debug, Error)]
@@ -280,17 +281,17 @@ pub enum ComponentType {
 }
 
 impl ComponentType {
-    /// convert a type to the OpenGL enum value for the type
-    pub fn gl_type(&self) -> u32 {
+    /// convert a type to the renderer enum value for the type
+    pub fn renderer_type(&self) -> AttributeType {
         use ComponentType::*;
 
         match self {
-            Byte => gl::BYTE,
-            UnsignedByte => gl::UNSIGNED_BYTE,
-            Short => gl::SHORT,
-            UnsignedShort => gl::UNSIGNED_SHORT,
-            UnsignedInt => gl::UNSIGNED_INT,
-            Float => gl::FLOAT,
+            Byte => AttributeType::I8,
+            UnsignedByte => AttributeType::U8,
+            Short => AttributeType::I16,
+            UnsignedShort => AttributeType::U16,
+            UnsignedInt => AttributeType::U32,
+            Float => AttributeType::F32,
         }
     }
 

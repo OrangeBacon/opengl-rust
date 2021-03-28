@@ -2,21 +2,20 @@ use std::{collections::HashMap, convert::TryInto};
 
 use crate::{
     bound::Bounds,
-    buffer, gltf,
-    renderer::{self, IndexBufferId, Renderer, VertexBufferId},
+    gltf,
+    renderer::{self, DrawingMode, IndexBufferId, Pipeline, PipelineId, Renderer, VertexBufferId},
     resources::{Error as ResourceError, Resources},
     texture,
-    texture::{GlTexture, Texture},
-    DynamicShader, EngineStateRef, Program,
+    texture::Texture,
+    DynamicShader,
 };
 use anyhow::Result;
-use gl::types::{GLenum, GLsizei};
 use nalgebra_glm as glm;
 use slotmap::{DefaultKey, SlotMap};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum ModelError {
     #[error("Both matrix and trs properties supplied on one node")]
     DuplicateTransform,
 
@@ -37,26 +36,11 @@ pub enum Error {
         array: &'static str,
     },
 
-    #[error("No target specified for buffer")]
-    NoTarget,
-
-    #[error("Unable to map buffer view to buffer tried to get {get}, max is {max}")]
-    BadViewLen { get: usize, max: usize },
-
     #[error("Mesh does not contain position data")]
     NoPositions,
 
     #[error("Bad vertex attribute lengths")]
     AttribLen,
-
-    #[error("Generated shader contains nul byte")]
-    NullShader,
-
-    #[error("Shader Compilation error: \n{error}")]
-    ShaderCompile { error: String },
-
-    #[error("Shader link error: \n{error}")]
-    ShaderLink { error: String },
 
     #[error("Error loading image {name}: {inner}")]
     ImageLoad {
@@ -103,6 +87,12 @@ pub enum Error {
 
     #[error("Unmatched sparse index to value count")]
     SparseIndexValues,
+
+    #[error("Graphics error in model:\n {inner}")]
+    Graphics {
+        #[source]
+        inner: anyhow::Error,
+    },
 }
 
 /// A 3d gltf model, including all its data.  Not dependant upon any rendering
@@ -119,18 +109,22 @@ pub struct Model {
 
     pub(crate) gltf: gltf::Model,
 
-    gpu_buffers: Vec<GPUBuffer>,
+    pub(crate) gpu_buffers: Vec<GPUBuffer>,
     gpu_textures: Vec<renderer::TextureId>,
-    gpu_pipelines: Vec<renderer::PipelineId>,
+    gpu_pipelines: Vec<Vec<GPUPrimitive>>,
 }
 
 impl Model {
-    pub fn from_res(res: &Resources, path: &str, renderer: &mut Renderer) -> Result<Self, Error> {
-        let parent = res.extend_file_root(path).ok_or(Error::RootPath {
+    pub fn from_res(
+        res: &Resources,
+        path: &str,
+        renderer: &mut Renderer,
+    ) -> Result<Self, ModelError> {
+        let parent = res.extend_file_root(path).ok_or(ModelError::RootPath {
             inner: path.to_string(),
         })?;
 
-        let gltf = gltf::Model::from_res(res, path).map_err(|e| Error::Gltf { inner: e })?;
+        let gltf = gltf::Model::from_res(res, path).map_err(|e| ModelError::Gltf { inner: e })?;
 
         let model = Model::from_gltf(gltf, &parent, renderer)?;
 
@@ -141,7 +135,7 @@ impl Model {
         mut gltf: gltf::Model,
         res: &Resources,
         renderer: &mut Renderer,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ModelError> {
         let mut default_buffer = gltf.default_buffer.take();
 
         let buffers = gltf
@@ -191,21 +185,24 @@ impl Model {
         res: &Resources,
         gltf: &gltf::Model,
         buffers: &[Buffer],
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<Vec<u8>, ModelError> {
         let data = match img.uri {
-            Some(ref uri) => res.load_bytes(uri).map_err(|e| Error::ImageLoad {
+            Some(ref uri) => res.load_bytes(uri).map_err(|e| ModelError::ImageLoad {
                 name: uri.to_string(),
                 inner: e,
             })?,
             None => {
                 if let Some(buffer_view) = img.buffer_view {
-                    let view = gltf.buffer_views.get(buffer_view).ok_or(Error::BadIndex {
-                        array: "buffer views",
-                        got: buffer_view,
-                        max: gltf.buffer_views.len(),
-                    })?;
+                    let view = gltf
+                        .buffer_views
+                        .get(buffer_view)
+                        .ok_or(ModelError::BadIndex {
+                            array: "buffer views",
+                            got: buffer_view,
+                            max: gltf.buffer_views.len(),
+                        })?;
 
-                    let buffer = buffers.get(view.buffer).ok_or(Error::BadIndex {
+                    let buffer = buffers.get(view.buffer).ok_or(ModelError::BadIndex {
                         array: "buffers",
                         got: view.buffer,
                         max: gltf.buffers.len(),
@@ -214,7 +211,7 @@ impl Model {
                     let data = buffer
                         .data
                         .get(view.byte_offset..(view.byte_offset + view.byte_length))
-                        .ok_or(Error::BadIndex {
+                        .ok_or(ModelError::BadIndex {
                             array: "buffers",
                             got: view.buffer,
                             max: gltf.buffers.len(),
@@ -222,7 +219,7 @@ impl Model {
 
                     data.to_vec()
                 } else {
-                    return Err(Error::NoSource);
+                    return Err(ModelError::NoSource);
                 }
             }
         };
@@ -234,7 +231,7 @@ impl Model {
         tex: &gltf::Texture,
         gltf: &gltf::Model,
         images: &[Vec<u8>],
-    ) -> Result<Texture, Error> {
+    ) -> Result<Texture, ModelError> {
         let default = gltf::Sampler::default();
         let sampler = if let Some(idx) = tex.sampler {
             &gltf.samplers[idx]
@@ -249,11 +246,11 @@ impl Model {
             mag_filter: sampler.mag_filter as _,
         };
 
-        let source = tex.source.ok_or(Error::NoImage)?;
+        let source = tex.source.ok_or(ModelError::NoImage)?;
         let data = &images[source];
 
-        let tex =
-            Texture::load_from_bytes(data, sampler).map_err(|e| Error::Texture { inner: e })?;
+        let tex = Texture::load_from_bytes(data, sampler)
+            .map_err(|e| ModelError::Texture { inner: e })?;
 
         Ok(tex)
     }
@@ -271,7 +268,7 @@ impl Model {
 
     /// Try to apply all the sparse accessors to the model data, so the graphics
     /// backend doesn't have to handle them
-    fn check_load_accessors(&mut self) -> Result<(), Error> {
+    fn check_load_accessors(&mut self) -> Result<(), ModelError> {
         // check each accessor to see if it is sparse
         for accessor in &self.gltf.accessors {
             let sparse = match &accessor.sparse {
@@ -320,7 +317,7 @@ impl Model {
                         ..(sparse.indices.byte_offset
                             + sparse.count * sparse.indices.component_type.size()),
                 )
-                .ok_or(Error::BadIndex {
+                .ok_or(ModelError::BadIndex {
                     array: "Sparse indicies",
                     got: sparse.indices.byte_offset + sparse.count,
                     max: indicies.len(),
@@ -335,7 +332,7 @@ impl Model {
                     sparse.values.byte_offset
                         ..(sparse.values.byte_offset + sparse.count * value_size),
                 )
-                .ok_or(Error::BadIndex {
+                .ok_or(ModelError::BadIndex {
                     array: "Sparse values",
                     got: sparse.values.byte_offset + sparse.count,
                     max: indicies.len(),
@@ -350,7 +347,7 @@ impl Model {
             // get the relevant portion of the data buffer
             let data = data
                 .get_mut(accessor.byte_offset..(accessor.byte_offset + accessor.count * value_size))
-                .ok_or(Error::BadIndex {
+                .ok_or(ModelError::BadIndex {
                     array: "Sparse accessor data",
                     got: accessor.byte_offset + accessor.count,
                     max: data_len,
@@ -391,7 +388,7 @@ impl Model {
                 gltf::ComponentType::Short => process!(i16),
                 gltf::ComponentType::UnsignedShort => process!(u16),
                 gltf::ComponentType::UnsignedInt => process!(u32),
-                gltf::ComponentType::Float => return Err(Error::SparseFloat),
+                gltf::ComponentType::Float => return Err(ModelError::SparseFloat),
             }
         }
 
@@ -399,12 +396,12 @@ impl Model {
     }
 
     // try to get a reference to the data from a buffer view
-    fn buffer_data(&self, buffer_view: usize) -> Result<&[u8], Error> {
+    fn buffer_data(&self, buffer_view: usize) -> Result<&[u8], ModelError> {
         let view = self
             .gltf
             .buffer_views
             .get(buffer_view)
-            .ok_or_else(|| Error::BadIndex {
+            .ok_or_else(|| ModelError::BadIndex {
                 array: "Buffer views",
                 got: buffer_view,
                 max: self.gltf.buffer_views.len(),
@@ -413,7 +410,7 @@ impl Model {
         let buffer = self
             .buffers
             .get(view.buffer)
-            .ok_or_else(|| Error::BadIndex {
+            .ok_or_else(|| ModelError::BadIndex {
                 array: "Buffers",
                 got: view.buffer,
                 max: self.buffers.len(),
@@ -422,7 +419,7 @@ impl Model {
         Ok(buffer
             .data
             .get(view.byte_offset..(view.byte_offset + view.byte_length))
-            .ok_or_else(|| Error::BadIndex {
+            .ok_or_else(|| ModelError::BadIndex {
                 array: "Buffer get",
                 got: view.byte_offset + view.byte_length,
                 max: buffer.data.len(),
@@ -436,10 +433,10 @@ impl Model {
         buffer_views: &[gltf::BufferView],
         buffers: &'a mut [Buffer],
         buffer_view: usize,
-    ) -> Result<&'a mut [u8], Error> {
+    ) -> Result<&'a mut [u8], ModelError> {
         let view = buffer_views
             .get(buffer_view)
-            .ok_or_else(|| Error::BadIndex {
+            .ok_or_else(|| ModelError::BadIndex {
                 array: "Buffer views",
                 got: buffer_view,
                 max: buffer_views.len(),
@@ -447,7 +444,7 @@ impl Model {
 
         let buffer_len = buffers.len();
 
-        let buffer = buffers.get_mut(view.buffer).ok_or(Error::BadIndex {
+        let buffer = buffers.get_mut(view.buffer).ok_or(ModelError::BadIndex {
             array: "Buffers",
             got: view.buffer,
             max: buffer_len,
@@ -458,7 +455,7 @@ impl Model {
         Ok(buffer
             .data
             .get_mut(view.byte_offset..(view.byte_offset + view.byte_length))
-            .ok_or(Error::BadIndex {
+            .ok_or(ModelError::BadIndex {
                 array: "Buffer get",
                 got: view.byte_offset + view.byte_length,
                 max: buffer_len,
@@ -466,7 +463,7 @@ impl Model {
     }
 
     /// load a 3d model onto the GPU
-    fn load_gpu(&mut self, renderer: &mut Renderer, res: &Resources) -> Result<(), Error> {
+    fn load_gpu(&mut self, renderer: &mut Renderer, res: &Resources) -> Result<(), ModelError> {
         self.gpu_buffers = self
             .gltf
             .buffer_views
@@ -493,6 +490,41 @@ impl Model {
             .into_iter()
             .map(|tex| renderer.load_texture(tex))
             .collect();
+
+        self.gpu_pipelines = Vec::with_capacity(self.gltf.meshes.len());
+
+        for mesh in &self.gltf.meshes {
+            let mut pipelines = Vec::with_capacity(mesh.primitives.len());
+
+            for prim in &mesh.primitives {
+                pipelines.push(GPUPrimitive::new(prim, self, renderer)?);
+            }
+
+            self.gpu_pipelines.push(pipelines);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn load_accessor(
+        pipeline: &mut Pipeline,
+        buf: &GPUBuffer,
+        accessor: &gltf::Accessor,
+        index: u32,
+    ) -> Result<(), ModelError> {
+        if let GPUBuffer::Vertex(_) = buf {
+        } else {
+            return Ok(());
+        };
+
+        let item_type = accessor.component_type.renderer_type();
+
+        pipeline.vertex_attribute(
+            index,
+            accessor.r#type.component_count() as _,
+            item_type,
+            false,
+        );
 
         Ok(())
     }
@@ -521,16 +553,16 @@ fn process_accessor<F>(
 
     // the stride of the data
     stride: usize,
-) -> Result<(), Error>
+) -> Result<(), ModelError>
 where
     F: Fn(&[u8]) -> usize,
 {
     if indicies.len() % idx_size != 0 {
-        return Err(Error::SparseIndicies);
+        return Err(ModelError::SparseIndicies);
     }
 
     if indicies.len() / idx_size != values.len() / value_size {
-        return Err(Error::SparseIndexValues);
+        return Err(ModelError::SparseIndexValues);
     }
 
     let data_len = data.len();
@@ -544,7 +576,7 @@ where
 
         let data = data
             .get_mut(byte_offset..(byte_offset + value_size))
-            .ok_or(Error::BadIndex {
+            .ok_or(ModelError::BadIndex {
                 array: "Sparse data",
                 got: byte_offset + value_size,
                 max: data_len,
@@ -585,7 +617,7 @@ impl BufferViewType {
     /// Errors if multiple types are derived for one buffer view or if no type
     /// is derived for the buffer view.  The latter usually indicates that that
     /// part of the specification hasn't been implemented yet.
-    fn derive_types(model: &gltf::Model) -> Result<Vec<Self>, Error> {
+    fn derive_types(model: &gltf::Model) -> Result<Vec<Self>, ModelError> {
         let mut types = vec![Self::None; model.buffer_views.len()];
 
         // derive mesh primative types
@@ -598,7 +630,7 @@ impl BufferViewType {
         // Set image buffers to CPU usage only
         for image in &model.images {
             if let Some(view) = image.buffer_view {
-                let view = types.get_mut(view).ok_or_else(|| Error::BadIndex {
+                let view = types.get_mut(view).ok_or_else(|| ModelError::BadIndex {
                     array: "buffer views",
                     got: view,
                     max: model.buffer_views.len(),
@@ -619,7 +651,7 @@ impl BufferViewType {
                     gltf::BufferViewTarget::ArrayBuffer => Self::ArrayBuffer,
                 };
 
-                let view = types.get_mut(idx).ok_or_else(|| Error::BadIndex {
+                let view = types.get_mut(idx).ok_or_else(|| ModelError::BadIndex {
                     array: "buffer views",
                     got: idx,
                     max: model.buffer_views.len(),
@@ -633,7 +665,7 @@ impl BufferViewType {
         let none_count = types.iter().filter(|&&x| x == Self::None).count();
 
         if none_count > 0 {
-            return Err(Error::BufferViewNoInference);
+            return Err(ModelError::BufferViewNoInference);
         }
 
         Ok(types)
@@ -644,14 +676,14 @@ impl BufferViewType {
         prim: &gltf::Primitive,
         model: &gltf::Model,
         types: &mut [Self],
-    ) -> Result<(), Error> {
+    ) -> Result<(), ModelError> {
         // set the vertex attributes to be array buffers
         for (_, &attr_id) in &prim.attributes {
             let accessor =
                 model
                     .accessors
                     .get(attr_id as usize)
-                    .ok_or_else(|| Error::BadIndex {
+                    .ok_or_else(|| ModelError::BadIndex {
                         array: "accessors",
                         got: attr_id as usize,
                         max: model.accessors.len(),
@@ -665,7 +697,7 @@ impl BufferViewType {
                 model
                     .accessors
                     .get(indicies as usize)
-                    .ok_or_else(|| Error::BadIndex {
+                    .ok_or_else(|| ModelError::BadIndex {
                         array: "accessors",
                         got: indicies as usize,
                         max: model.accessors.len(),
@@ -679,14 +711,18 @@ impl BufferViewType {
     /// Set the buffer views referenced by an accessor to have the buffer view
     /// type passed in, or to be CPU buffers if referenced as part of a sparse
     /// accessor.
-    fn set_accessor(accessor: &gltf::Accessor, types: &mut [Self], set: Self) -> Result<(), Error> {
+    fn set_accessor(
+        accessor: &gltf::Accessor,
+        types: &mut [Self],
+        set: Self,
+    ) -> Result<(), ModelError> {
         // calculate length, required for errors due to get_mut + lifetimes
         let type_len = types.len();
 
         // Set the buffer view to the requested type, if the accessor has
         // a buffer view
         if let Some(view) = accessor.buffer_view {
-            let view = types.get_mut(view).ok_or(Error::BadIndex {
+            let view = types.get_mut(view).ok_or(ModelError::BadIndex {
                 array: "buffer views",
                 got: view,
                 max: type_len,
@@ -698,7 +734,7 @@ impl BufferViewType {
         // If there is a sparse accessor, set its views to be CPU buffers
         if let Some(sparse) = &accessor.sparse {
             let indicies = sparse.indices.buffer_view;
-            let view = types.get_mut(indicies).ok_or(Error::BadIndex {
+            let view = types.get_mut(indicies).ok_or(ModelError::BadIndex {
                 array: "buffer views",
                 got: indicies,
                 max: type_len,
@@ -707,7 +743,7 @@ impl BufferViewType {
             Self::set_view(view, Self::CPUBuffer)?;
 
             let values = sparse.values.buffer_view;
-            let view = types.get_mut(values).ok_or(Error::BadIndex {
+            let view = types.get_mut(values).ok_or(ModelError::BadIndex {
                 array: "buffer views",
                 got: values,
                 max: type_len,
@@ -721,11 +757,11 @@ impl BufferViewType {
 
     /// Try to set a view to have a provided type, if it already has a different
     /// type, it will error.
-    fn set_view(view: &mut Self, set: Self) -> Result<(), Error> {
+    fn set_view(view: &mut Self, set: Self) -> Result<(), ModelError> {
         match view {
             Self::None => *view = set,
             _ if *view == set => (),
-            _ => return Err(Error::BufferViewType),
+            _ => return Err(ModelError::BufferViewType),
         }
 
         Ok(())
@@ -742,20 +778,20 @@ impl Buffer {
         buffer: &gltf::Buffer,
         res: &Resources,
         default: &mut Option<Vec<u8>>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ModelError> {
         let bytes = match buffer.uri {
-            Some(ref uri) => res.load_bytes(&uri).map_err(|e| Error::BufferLoad {
+            Some(ref uri) => res.load_bytes(&uri).map_err(|e| ModelError::BufferLoad {
                 name: uri.clone(),
                 inner: e,
             })?,
             None => match default.take() {
                 Some(data) => data,
-                None => return Err(Error::InternalBuffer),
+                None => return Err(ModelError::InternalBuffer),
             },
         };
 
         if bytes.len() < buffer.byte_length {
-            return Err(Error::BufferLength {
+            return Err(ModelError::BufferLength {
                 len: bytes.len(),
                 expected: buffer.byte_length,
             });
@@ -772,7 +808,7 @@ pub struct Scene {
 }
 
 impl Scene {
-    fn new(scene: &gltf::Scene, gltf: &gltf::Model) -> Result<Self, Error> {
+    fn new(scene: &gltf::Scene, gltf: &gltf::Model) -> Result<Self, ModelError> {
         let mut nodes = SlotMap::new();
 
         let root_nodes = scene
@@ -780,11 +816,13 @@ impl Scene {
             .iter()
             .map(|&node_id| {
                 Ok(Node::new(
-                    gltf.nodes.get(node_id).ok_or_else(|| Error::BadIndex {
-                        array: "Nodes",
-                        got: node_id,
-                        max: gltf.nodes.len(),
-                    })?,
+                    gltf.nodes
+                        .get(node_id)
+                        .ok_or_else(|| ModelError::BadIndex {
+                            array: "Nodes",
+                            got: node_id,
+                            max: gltf.nodes.len(),
+                        })?,
                     None,
                     gltf,
                     &mut nodes,
@@ -811,7 +849,7 @@ impl Node {
         parent: Option<DefaultKey>,
         gltf: &gltf::Model,
         nodes: &mut SlotMap<DefaultKey, Node>,
-    ) -> Result<DefaultKey, Error> {
+    ) -> Result<DefaultKey, ModelError> {
         let this_key = nodes.insert(Node::default());
         nodes[this_key].mesh_id = node.mesh;
         nodes[this_key].parent = parent;
@@ -834,11 +872,13 @@ impl Node {
             .iter()
             .map(|&node_id| {
                 Ok(Node::new(
-                    gltf.nodes.get(node_id).ok_or_else(|| Error::BadIndex {
-                        array: "Nodes",
-                        got: node_id,
-                        max: gltf.nodes.len(),
-                    })?,
+                    gltf.nodes
+                        .get(node_id)
+                        .ok_or_else(|| ModelError::BadIndex {
+                            array: "Nodes",
+                            got: node_id,
+                            max: gltf.nodes.len(),
+                        })?,
                     Some(this_key),
                     gltf,
                     nodes,
@@ -850,14 +890,14 @@ impl Node {
         Ok(this_key)
     }
 
-    fn get_matrix(node: &gltf::Node) -> Result<glm::Mat4, Error> {
+    fn get_matrix(node: &gltf::Node) -> Result<glm::Mat4, ModelError> {
         let mut matrix = glm::Mat4::identity();
 
         if let Some(m) = node.matrix {
             matrix.copy_from_slice(&m);
 
             if node.translation.is_some() || node.rotation.is_some() || node.scale.is_some() {
-                return Err(Error::DuplicateTransform);
+                return Err(ModelError::DuplicateTransform);
             }
             return Ok(matrix);
         }
@@ -904,7 +944,7 @@ impl Node {
 /// A loaded buffer, either an index buffer, a vertex buffer or neither for specifying
 /// a CPU only buffer
 #[derive(Debug)]
-enum GPUBuffer {
+pub(crate) enum GPUBuffer {
     Index(IndexBufferId),
     Vertex(VertexBufferId),
     None,
@@ -930,6 +970,68 @@ impl GPUBuffer {
     }
 }
 
+#[derive(Debug)]
+struct GPUPrimitive {
+    pipeline: PipelineId,
+    vertex_count: usize,
+    base_color_texidx: Option<usize>,
+    indicies: Option<usize>,
+    draw_mode: DrawingMode,
+}
+
+impl GPUPrimitive {
+    fn new(
+        prim: &gltf::Primitive,
+        model: &Model,
+        renderer: &mut Renderer,
+    ) -> Result<Self, ModelError> {
+        let mut pipeline = Pipeline::new();
+        let vertex_count = DynamicShader::new(&mut pipeline, prim, model)?;
+
+        let mat = if let Some(mat) = prim.material {
+            Some(&model.gltf.materials[mat])
+        } else {
+            None
+        };
+
+        let base_color = if let Some(mat) = mat {
+            if let Some(pbr) = &mat.pbr_metallic_roughness {
+                if let Some(color) = &pbr.base_color_texture {
+                    Some(color.index)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let pipeline = renderer
+            .load_pipeline(pipeline)
+            .map_err(|e| ModelError::Graphics { inner: e.into() })?;
+
+        let draw_mode = match prim.mode {
+            gltf::PrimitiveMode::LineLoop => DrawingMode::LineLoop,
+            gltf::PrimitiveMode::LineStrip => DrawingMode::LineStrip,
+            gltf::PrimitiveMode::Lines => DrawingMode::Lines,
+            gltf::PrimitiveMode::Points => DrawingMode::Points,
+            gltf::PrimitiveMode::TriangleFan => DrawingMode::TriangleFan,
+            gltf::PrimitiveMode::TriangleStrip => DrawingMode::TriangleStrip,
+            gltf::PrimitiveMode::Triangles => DrawingMode::Triangles,
+        };
+
+        Ok(Self {
+            pipeline,
+            vertex_count,
+            draw_mode,
+            base_color_texidx: base_color,
+            indicies: prim.indices,
+        })
+    }
+}
+/*
 /// The state required to store the opengl state created from a model
 pub struct GLModel {
     views: Vec<GLBuffer>,
@@ -1007,7 +1109,7 @@ impl GLModel {
         buf: &GLBuffer,
         accessor: &gltf::Accessor,
         index: u32,
-    ) -> Result<(), Error> {
+    ) -> Result<(), ModelError> {
         if let Some(ref buf) = buf.buf {
             if buf.buffer_type != gltf::BufferViewTarget::ArrayBuffer as u32 {
                 return Ok(());
@@ -1085,7 +1187,7 @@ impl GLMesh {
         buffers: &[GLBuffer],
         mesh: &gltf::Mesh,
         model: &Model,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ModelError> {
         let prims = mesh
             .primitives
             .iter()
@@ -1127,7 +1229,7 @@ impl GlPrim {
         prim: &gltf::Primitive,
         model: &Model,
         buffers: &[GLBuffer],
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, ModelError> {
         let vao = buffer::VertexArray::new(gl);
 
         vao.bind();
@@ -1229,3 +1331,4 @@ impl GlPrim {
         self.vao.unbind();
     }
 }
+*/

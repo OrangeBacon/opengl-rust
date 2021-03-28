@@ -1,7 +1,7 @@
 use anyhow::Result;
 use engine::{
     glm,
-    model::{GLModel, Model},
+    model::Model,
     resources::Resources,
     window::{event::Event, scancode::Scancode, sdl_window::SdlWindow},
     Camera, EngineStateRef, EventResult, Layer, MainLoop,
@@ -12,7 +12,6 @@ use std::path::Path;
 struct Triangle {
     camera: Camera,
     model: Model,
-    gl_data: GLModel,
 }
 
 impl Triangle {
@@ -35,14 +34,6 @@ impl Triangle {
             Ok(model) => model,
             Err(e) => {
                 println!("error: {}", e);
-                return None;
-            }
-        };
-
-        self.gl_data = match GLModel::new(&model, &state.gl) {
-            Ok(g) => g,
-            Err(e) => {
-                println!("error {}", e);
                 return None;
             }
         };
@@ -81,14 +72,12 @@ impl Layer for Triangle {
             "sea_keep_lonely_watcher/scene.gltf",
             &mut state.renderer,
         )?;
-        let gl_data = GLModel::new(&model, &state.gl)?;
 
         let (width, height) = state.window.size();
         state.viewport(width, height);
 
         let mut this = Triangle {
             model,
-            gl_data,
             camera: Camera::new(),
         };
 
@@ -147,8 +136,6 @@ impl Layer for Triangle {
         );
 
         let view = self.camera.get_view();
-
-        self.gl_data.render(&self.model, state, &proj, &view);
     }
 }
 

@@ -372,6 +372,11 @@ impl GlPipeline {
                 AttributeType::U32 => gl::UNSIGNED_INT,
             };
 
+            let normalised = match attribute.normalised {
+                true => gl::TRUE,
+                false => gl::FALSE,
+            };
+
             unsafe {
                 gl.EnableVertexArrayAttrib(vao, attribute.location);
                 gl.VertexArrayAttribFormat(
@@ -379,7 +384,7 @@ impl GlPipeline {
                     attribute.location,
                     attribute.count as _,
                     attribute_type,
-                    attribute.normalised as _,
+                    normalised,
                     0,
                 );
                 gl.VertexArrayAttribBinding(vao, attribute.location, i as _);
