@@ -206,24 +206,20 @@ struct Attribute {
 
 impl Attribute {
     fn layout(&self, prim: &gltf::Primitive, model: &Model) -> Option<&'static str> {
-        match self.kind {
-            AttributeType::Position => Some("vec3"),
+        let ret = match self.kind {
+            AttributeType::Position => "vec3",
             AttributeType::Color(_) => {
                 if model.gltf.accessors[self.accessor_idx].r#type == AccessorType::Vec3 {
-                    Some("vec3")
+                    "vec3"
                 } else {
-                    Some("vec4")
+                    "vec4"
                 }
             }
-            AttributeType::TexCoord(idx) => {
-                if is_base_color(prim, model, idx) {
-                    Some("vec2")
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => "vec2",
+            _ => return None,
+        };
+
+        Some(ret)
     }
 
     fn variable(&self) -> String {
@@ -239,23 +235,19 @@ impl Attribute {
     }
 
     fn interface(&self, prim: &gltf::Primitive, model: &Model) -> Option<&'static str> {
-        match self.kind {
+        let ret = match self.kind {
             AttributeType::Color(_) => {
                 if model.gltf.accessors[self.accessor_idx].r#type == AccessorType::Vec3 {
-                    Some("vec3")
+                    "vec3"
                 } else {
-                    Some("vec4")
+                    "vec4"
                 }
             }
-            AttributeType::TexCoord(idx) => {
-                if is_base_color(prim, model, idx) {
-                    Some("vec2")
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => "vec2",
+            _ => return None,
+        };
+
+        Some(ret)
     }
 
     fn uniform_vert(&self) -> Option<Vec<&'static str>> {
@@ -266,75 +258,56 @@ impl Attribute {
     }
 
     fn uniform_frag(&self, prim: &gltf::Primitive, model: &Model) -> Option<Vec<&'static str>> {
-        match self.kind {
-            AttributeType::TexCoord(idx) => {
-                if is_base_color(prim, model, idx) {
-                    Some(vec!["sampler2D baseColor"])
-                } else {
-                    None
-                }
+        let ret = match self.kind {
+            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
+                vec!["sampler2D baseColor"]
             }
-            _ => None,
-        }
+            _ => return None,
+        };
+
+        Some(ret)
     }
 
     fn vert(&self, prim: &gltf::Primitive, model: &Model) -> Option<String> {
-        match self.kind {
-            AttributeType::Position => Some(
-                "    gl_Position = projection * view * model * vec4(Position, 1.0);\n".to_string(),
-            ),
-            AttributeType::Color(_) => Some(format!("    OUT.{0} = {0};\n", self.variable())),
-            AttributeType::TexCoord(idx) => {
-                if is_base_color(prim, model, idx) {
-                    Some(format!("    OUT.{0} = {0};\n", self.variable()))
-                } else {
-                    None
-                }
+        let ret = match self.kind {
+            AttributeType::Position => {
+                "    gl_Position = projection * view * model * vec4(Position, 1.0);\n".to_string()
             }
-            _ => None,
-        }
+            AttributeType::Color(_) => format!("    OUT.{0} = {0};\n", self.variable()),
+            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
+                format!("    OUT.{0} = {0};\n", self.variable())
+            }
+            _ => return None,
+        };
+
+        Some(ret)
     }
 
     fn out(&self, prim: &gltf::Primitive, model: &Model) -> Option<String> {
-        match self.kind {
+        let ret = match self.kind {
             AttributeType::Color(_) => {
                 if model.gltf.accessors[self.accessor_idx].r#type == AccessorType::Vec3 {
-                    Some(format!("vec4(IN.{}, 1.0)", self.variable()))
+                    format!("vec4(IN.{}, 1.0)", self.variable())
                 } else {
-                    Some(format!("IN.{}", self.variable()))
+                    format!("IN.{}", self.variable())
                 }
             }
-            AttributeType::TexCoord(idx) => {
-                if is_base_color(prim, model, idx) {
-                    Some(format!("texture(baseColor, IN.TexCoord{})", idx))
-                } else {
-                    None
-                }
+            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
+                format!("texture(baseColor, IN.TexCoord{})", idx)
             }
-            _ => None,
-        }
+            _ => return None,
+        };
+
+        Some(ret)
     }
 }
 
 fn is_base_color(prim: &gltf::Primitive, model: &Model, idx: usize) -> bool {
-    if let Some(mat) = prim.material {
-        let mat = &model.gltf.materials[mat];
-        if let Some(pbr) = &mat.pbr_metallic_roughness {
-            if let Some(color) = &pbr.base_color_texture {
-                if color.tex_coord == idx {
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    }
+    prim.material
+        .and_then(|mat| model.gltf.materials[mat].pbr_metallic_roughness.as_ref())
+        .and_then(|pbr| pbr.base_color_texture.as_ref())
+        .map(|color| color.tex_coord == idx)
+        .unwrap_or(false)
 }
 
 enum AttributeType {
@@ -351,39 +324,17 @@ impl AttributeType {
     fn from(value: &str) -> Option<Self> {
         let comps: Vec<_> = value.split('_').collect();
 
-        match comps.as_slice() {
-            ["POSITION"] => Some(AttributeType::Position),
-            ["NORMAL"] => Some(AttributeType::Normal),
-            ["TANGENT"] => Some(AttributeType::Tangent),
-            ["TEXCOORD", a] => {
-                if let Ok(idx) = a.parse() {
-                    Some(AttributeType::TexCoord(idx))
-                } else {
-                    None
-                }
-            }
-            ["COLOR", a] => {
-                if let Ok(idx) = a.parse() {
-                    Some(AttributeType::Color(idx))
-                } else {
-                    None
-                }
-            }
-            ["JOINTS", a] => {
-                if let Ok(idx) = a.parse() {
-                    Some(AttributeType::Joints(idx))
-                } else {
-                    None
-                }
-            }
-            ["WEIGHTS", a] => {
-                if let Ok(idx) = a.parse() {
-                    Some(AttributeType::Weights(idx))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
+        let ty = match comps.as_slice() {
+            ["POSITION"] => AttributeType::Position,
+            ["NORMAL"] => AttributeType::Normal,
+            ["TANGENT"] => AttributeType::Tangent,
+            ["TEXCOORD", a] => AttributeType::TexCoord(a.parse().ok()?),
+            ["COLOR", a] => AttributeType::Color(a.parse().ok()?),
+            ["JOINTS", a] => AttributeType::Joints(a.parse().ok()?),
+            ["WEIGHTS", a] => AttributeType::Weights(a.parse().ok()?),
+            _ => return None,
+        };
+
+        Some(ty)
     }
 }
