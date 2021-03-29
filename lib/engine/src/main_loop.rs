@@ -241,7 +241,7 @@ impl MainLoop {
                     layer_pop: &mut layer_pop,
                     layer_id: layer,
                 };
-                self.layers[layer].render(&mut state);
+                self.layers[layer].render(&mut state)?;
             }
 
             // update layers

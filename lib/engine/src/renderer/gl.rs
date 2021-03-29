@@ -30,7 +30,7 @@ enum GlError {
     #[error("Error getting buffer for error message, unable to display error")]
     ErrorBuffer,
 
-    #[error("Unable to finf a free active texture unit")]
+    #[error("Unable to find a free active texture unit")]
     TextureUnitsFull,
 
     #[error("Cannot bind texture to unbound pipeline")]
@@ -55,7 +55,7 @@ pub struct GlRenderer {
 
 impl GlRenderer {
     pub fn new(gl: gl::Gl) -> Self {
-        if !cfg!(debug_assertions) {
+        if cfg!(debug_assertions) {
             enable_gl_debugging(&gl);
         }
 
@@ -176,11 +176,10 @@ impl RendererBackend for GlRenderer {
 
     fn bind_pipeline(&mut self, pipeline: PipelineId) {
         self.active_textures.insert(pipeline, vec![]);
+        self.pipelines[&pipeline.0].bind(&self.gl);
     }
 
     fn unbind_pipeline(&mut self, pipeline: PipelineId) {
-        self.active_textures.remove(&pipeline);
-
         for &texture_unit in &self.active_textures[&pipeline] {
             self.texture_units[texture_unit] = false;
         }
@@ -218,7 +217,7 @@ impl RendererBackend for GlRenderer {
             .texture_units
             .iter()
             .enumerate()
-            .find(|&(_, &in_use)| in_use)
+            .find(|&(_, &in_use)| !in_use)
             .ok_or(GlError::TextureUnitsFull)?;
 
         // tell the renderer that a texture unit is in use
@@ -249,7 +248,7 @@ impl RendererBackend for GlRenderer {
         pipeline: PipelineId,
         buffers: &[VertexBufferId],
         offsets: &[usize],
-        strides: &[usize],
+        strides: &[i32],
     ) {
         let buffers: Vec<_> = buffers
             .iter()
@@ -268,9 +267,7 @@ impl RendererBackend for GlRenderer {
         }
     }
 
-    fn draw(&mut self, pipeline: PipelineId, mode: DrawingMode, start: u64, count: u64) {
-        self.pipelines[&pipeline.0].bind(&self.gl);
-
+    fn draw(&mut self, _pipeline: PipelineId, mode: DrawingMode, start: u64, count: u64) {
         let mode = match mode {
             DrawingMode::Points => gl::POINTS,
             DrawingMode::Lines => gl::LINES,
@@ -288,15 +285,13 @@ impl RendererBackend for GlRenderer {
 
     fn draw_indicies(
         &mut self,
-        pipeline: PipelineId,
+        _pipeline: PipelineId,
         mode: DrawingMode,
         indices: IndexBufferId,
         index_type: IndexType,
         index_offset: usize,
         count: usize,
     ) {
-        self.pipelines[&pipeline.0].bind(&self.gl);
-
         let mode = match mode {
             DrawingMode::Points => gl::POINTS,
             DrawingMode::Lines => gl::LINES,
@@ -358,7 +353,7 @@ impl GlPipeline {
         // implemented if a version of OpenGl older than 4.5 is needed to be supported
         let mut vao = 0;
         unsafe {
-            gl.GenVertexArrays(1, &mut vao);
+            gl.CreateVertexArrays(1, &mut vao);
         }
 
         for (i, attribute) in pipeline.attributes.iter().enumerate() {
@@ -396,6 +391,7 @@ impl GlPipeline {
 
     fn bind(&self, gl: &gl::Gl) {
         unsafe {
+            gl.UseProgram(self.program_id);
             gl.BindVertexArray(self.vao);
         }
     }

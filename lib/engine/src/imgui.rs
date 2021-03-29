@@ -124,7 +124,7 @@ impl<T: Layer + 'static> Layer for ImguiLayer<T> {
     // imgui does everything in the render function, no update needed
     fn update(&mut self, _state: &mut EngineStateRef, _dt: f32) {}
 
-    fn render(&mut self, state: &mut EngineStateRef) {
+    fn render(&mut self, state: &mut EngineStateRef) -> Result<()> {
         let io = self.context.io_mut();
 
         let (w, h) = state.window.size();
@@ -181,6 +181,8 @@ impl<T: Layer + 'static> Layer for ImguiLayer<T> {
         }
 
         self.renderer.render(ui);
+
+        Ok(())
     }
 
     /// in order to render ontop of the game, it needs defered rendering

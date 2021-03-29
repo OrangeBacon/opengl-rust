@@ -15,7 +15,7 @@ use serde_json::Value;
 use serde_repr::Deserialize_repr;
 use thiserror::Error;
 
-use crate::renderer::AttributeType;
+use crate::renderer::{AttributeType, IndexType};
 use crate::resources::{Error as ResourceError, Resources};
 
 #[derive(Debug, Error)]
@@ -236,7 +236,7 @@ pub struct Accessor {
     pub count: usize,
 
     /// Whether the data referenced is scalar, vector or matrix
-    pub r#type: Type,
+    pub r#type: AccessorType,
 
     /// The maximum value of each component.  The type of each item in the
     /// vector should be determined by component_type, the length of the
@@ -281,8 +281,8 @@ pub enum ComponentType {
 }
 
 impl ComponentType {
-    /// convert a type to the renderer enum value for the type
-    pub fn renderer_type(&self) -> AttributeType {
+    /// convert a type to the renderer attribute type enum value
+    pub fn attribute_type(&self) -> AttributeType {
         use ComponentType::*;
 
         match self {
@@ -293,6 +293,20 @@ impl ComponentType {
             UnsignedInt => AttributeType::U32,
             Float => AttributeType::F32,
         }
+    }
+
+    /// convert a type to the renderer attribute type enum value
+    pub fn index_type(&self) -> Option<IndexType> {
+        use ComponentType::*;
+
+        let ty = match self {
+            UnsignedByte => IndexType::U8,
+            UnsignedShort => IndexType::U16,
+            UnsignedInt => IndexType::U32,
+            _ => return None,
+        };
+
+        Some(ty)
     }
 
     pub fn size(&self) -> usize {
@@ -312,7 +326,7 @@ impl ComponentType {
 /// How the elements of an accessor are layed out
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "UPPERCASE")]
-pub enum Type {
+pub enum AccessorType {
     Scalar,
     Vec2,
     Vec3,
@@ -322,11 +336,11 @@ pub enum Type {
     Mat4,
 }
 
-impl Type {
+impl AccessorType {
     /// Get the number of components, i.e individual numeric values in
     /// a value of this type.  E.g. Scalar => 1, Vec2 => 2, etc.
     pub fn component_count(&self) -> usize {
-        use Type::*;
+        use AccessorType::*;
 
         match self {
             Scalar => 1,

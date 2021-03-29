@@ -65,7 +65,7 @@ pub trait RendererBackend {
         pipeline: PipelineId,
         buffers: &[VertexBufferId],
         offsets: &[usize],
-        strides: &[usize],
+        strides: &[i32],
     );
 
     /// draw verticies using a pipeline

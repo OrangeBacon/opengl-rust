@@ -3,11 +3,14 @@ use std::{collections::HashMap, convert::TryInto};
 use crate::{
     bound::Bounds,
     gltf,
-    renderer::{self, DrawingMode, IndexBufferId, Pipeline, PipelineId, Renderer, VertexBufferId},
+    renderer::{
+        self, DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, Renderer, TextureId,
+        VertexBufferId,
+    },
     resources::{Error as ResourceError, Resources},
     texture,
     texture::Texture,
-    DynamicShader,
+    DynamicShader, EngineStateRef,
 };
 use anyhow::Result;
 use nalgebra_glm as glm;
@@ -93,6 +96,12 @@ pub enum ModelError {
         #[source]
         inner: anyhow::Error,
     },
+
+    #[error("Trying to bind index buffer as vertex array")]
+    IndexAsVertex,
+
+    #[error("Trying to bind to an accessor without a defined buffer view")]
+    AccessorWithoutBuffer,
 }
 
 /// A 3d gltf model, including all its data.  Not dependant upon any rendering
@@ -517,7 +526,7 @@ impl Model {
             return Ok(());
         };
 
-        let item_type = accessor.component_type.renderer_type();
+        let item_type = accessor.component_type.attribute_type();
 
         pipeline.vertex_attribute(
             index,
@@ -525,6 +534,58 @@ impl Model {
             item_type,
             false,
         );
+
+        Ok(())
+    }
+
+    pub fn render(
+        &self,
+        state: &mut EngineStateRef,
+        proj: &glm::Mat4,
+        view: &glm::Mat4,
+    ) -> Result<()> {
+        let scene_idx = self.gltf.scene.unwrap_or(0);
+        let scene = &self.scenes[scene_idx];
+
+        for node_idx in &scene.root_nodes {
+            let node = &scene.nodes[*node_idx];
+            self.render_node(node, scene, state, proj, view)?;
+        }
+
+        Ok(())
+    }
+
+    fn render_node(
+        &self,
+        node: &Node,
+        scene: &Scene,
+        state: &mut EngineStateRef,
+        proj: &glm::Mat4,
+        view: &glm::Mat4,
+    ) -> Result<()> {
+        if let Some(mesh_id) = node.mesh_id {
+            self.render_mesh(mesh_id, state, &node.global_matrix, proj, view)?;
+        }
+
+        for child in &node.children {
+            let node = &scene.nodes[*child];
+            self.render_node(node, scene, state, proj, view)?;
+        }
+
+        Ok(())
+    }
+
+    fn render_mesh(
+        &self,
+        mesh_id: usize,
+        state: &mut EngineStateRef,
+        model_mat: &glm::Mat4,
+        proj: &glm::Mat4,
+        view: &glm::Mat4,
+    ) -> Result<()> {
+        for prim in &self.gpu_pipelines[mesh_id] {
+            prim.render(state, view, proj, model_mat)?;
+        }
 
         Ok(())
     }
@@ -943,7 +1004,7 @@ impl Node {
 
 /// A loaded buffer, either an index buffer, a vertex buffer or neither for specifying
 /// a CPU only buffer
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub(crate) enum GPUBuffer {
     Index(IndexBufferId),
     Vertex(VertexBufferId),
@@ -971,12 +1032,25 @@ impl GPUBuffer {
 }
 
 #[derive(Debug)]
+struct GPUPrimitiveIndexInfo {
+    buffer: IndexBufferId,
+    item_type: IndexType,
+    count: usize,
+    offset: usize,
+}
+
+#[derive(Debug)]
 struct GPUPrimitive {
     pipeline: PipelineId,
     vertex_count: usize,
-    base_color_texidx: Option<usize>,
-    indicies: Option<usize>,
+    base_color_texidx: Option<TextureId>,
+    indicies: Option<GPUPrimitiveIndexInfo>,
     draw_mode: DrawingMode,
+    culling: bool,
+
+    vertex_buffers: Vec<VertexBufferId>,
+    vertex_strides: Vec<i32>,
+    vertex_offsets: Vec<usize>,
 }
 
 impl GPUPrimitive {
@@ -997,7 +1071,7 @@ impl GPUPrimitive {
         let base_color = if let Some(mat) = mat {
             if let Some(pbr) = &mat.pbr_metallic_roughness {
                 if let Some(color) = &pbr.base_color_texture {
-                    Some(color.index)
+                    Some(model.gpu_textures[color.index])
                 } else {
                     None
                 }
@@ -1022,13 +1096,127 @@ impl GPUPrimitive {
             gltf::PrimitiveMode::Triangles => DrawingMode::Triangles,
         };
 
+        let indicies = prim
+            .indices
+            .and_then(|idx| {
+                let accessor = &model.gltf.accessors[idx];
+                if let Some(view) = accessor.buffer_view {
+                    Some((accessor, view))
+                } else {
+                    None
+                }
+            })
+            .and_then(|(accessor, view)| {
+                if let GPUBuffer::Index(buf) = model.gpu_buffers[view] {
+                    Some((accessor, buf))
+                } else {
+                    None
+                }
+            })
+            .and_then(|(accessor, buf)| {
+                if let Some(ty) = accessor.component_type.index_type() {
+                    Some(GPUPrimitiveIndexInfo {
+                        buffer: buf,
+                        count: accessor.count,
+                        item_type: ty,
+                        offset: accessor.byte_offset,
+                    })
+                } else {
+                    None
+                }
+            });
+
+        let (vertex_buffers, vertex_offsets, vertex_strides) =
+            Self::get_vertex_array_data(prim, model)?;
+
         Ok(Self {
             pipeline,
             vertex_count,
             draw_mode,
+            indicies,
+            vertex_buffers,
+            vertex_offsets,
+            vertex_strides,
             base_color_texidx: base_color,
-            indicies: prim.indices,
+            culling: !mat.map(|a| a.double_sided).unwrap_or(false),
         })
+    }
+
+    /// get the vertex buffers, strides and offsets (in that order) for a primitive
+    fn get_vertex_array_data(
+        prim: &gltf::Primitive,
+        model: &Model,
+    ) -> Result<(Vec<VertexBufferId>, Vec<usize>, Vec<i32>), ModelError> {
+        let capacity = prim.attributes.len();
+        let mut buffers = Vec::with_capacity(capacity);
+        let mut offsets = Vec::with_capacity(capacity);
+        let mut strides = Vec::with_capacity(capacity);
+
+        for (_, &attr) in &prim.attributes {
+            let accessor = &model.gltf.accessors[attr as usize];
+            if let Some(view_idx) = accessor.buffer_view {
+                if let GPUBuffer::Vertex(buf) = model.gpu_buffers[view_idx] {
+                    let view = &model.gltf.buffer_views[view_idx];
+
+                    buffers.push(buf);
+                    offsets.push(accessor.byte_offset);
+                    strides.push(view.byte_stride.unwrap_or(0) as _);
+                } else {
+                    return Err(ModelError::IndexAsVertex);
+                }
+            } else {
+                return Err(ModelError::AccessorWithoutBuffer);
+            }
+        }
+
+        Ok((buffers, offsets, strides))
+    }
+
+    fn render(
+        &self,
+        renderer: &mut Renderer,
+        view: &glm::Mat4,
+        proj: &glm::Mat4,
+        model: &glm::Mat4,
+    ) -> Result<()> {
+        if self.culling {
+            renderer.backface_culling(true);
+        }
+
+        let mut pipeline = renderer.bind_pipeline(self.pipeline);
+        pipeline.bind_matrix("view", *view);
+        pipeline.bind_matrix("projection", *proj);
+        pipeline.bind_matrix("model", *model);
+
+        if let Some(tex) = self.base_color_texidx {
+            pipeline.bind_texture("baseColor", tex)?;
+        }
+
+        pipeline.bind_vertex_arrays(
+            &self.vertex_buffers,
+            &self.vertex_offsets,
+            &self.vertex_strides,
+        );
+
+        if let Some(indices) = &self.indicies {
+            pipeline.draw_indicies(
+                self.draw_mode,
+                indices.buffer,
+                indices.item_type,
+                indices.offset,
+                indices.count,
+            );
+        } else {
+            pipeline.draw(self.draw_mode, 0, self.vertex_count as _);
+        }
+
+        drop(pipeline);
+
+        if self.culling {
+            renderer.backface_culling(false);
+        }
+
+        Ok(())
     }
 }
 /*

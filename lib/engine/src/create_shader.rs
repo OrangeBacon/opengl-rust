@@ -1,4 +1,4 @@
-use gltf::Type;
+use gltf::AccessorType;
 
 use crate::{gltf, model::Model, model::ModelError, renderer::Pipeline};
 
@@ -209,7 +209,7 @@ impl Attribute {
         match self.kind {
             AttributeType::Position => Some("vec3"),
             AttributeType::Color(_) => {
-                if model.gltf.accessors[self.accessor_idx].r#type == Type::Vec3 {
+                if model.gltf.accessors[self.accessor_idx].r#type == AccessorType::Vec3 {
                     Some("vec3")
                 } else {
                     Some("vec4")
@@ -241,7 +241,7 @@ impl Attribute {
     fn interface(&self, prim: &gltf::Primitive, model: &Model) -> Option<&'static str> {
         match self.kind {
             AttributeType::Color(_) => {
-                if model.gltf.accessors[self.accessor_idx].r#type == Type::Vec3 {
+                if model.gltf.accessors[self.accessor_idx].r#type == AccessorType::Vec3 {
                     Some("vec3")
                 } else {
                     Some("vec4")
@@ -298,7 +298,7 @@ impl Attribute {
     fn out(&self, prim: &gltf::Primitive, model: &Model) -> Option<String> {
         match self.kind {
             AttributeType::Color(_) => {
-                if model.gltf.accessors[self.accessor_idx].r#type == Type::Vec3 {
+                if model.gltf.accessors[self.accessor_idx].r#type == AccessorType::Vec3 {
                     Some(format!("vec4(IN.{}, 1.0)", self.variable()))
                 } else {
                     Some(format!("IN.{}", self.variable()))

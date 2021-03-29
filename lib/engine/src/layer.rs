@@ -45,7 +45,7 @@ pub trait Layer {
     fn update(&mut self, state: &mut EngineStateRef, dt: f32);
 
     /// Run the rendering for this layer
-    fn render(&mut self, state: &mut EngineStateRef);
+    fn render(&mut self, state: &mut EngineStateRef) -> Result<()>;
 
     /// The order that the layer should be updated it, it is assumed that this
     /// is a const fn, but that cannot be expressed in the trait.  Default is

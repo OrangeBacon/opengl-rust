@@ -218,7 +218,7 @@ impl<'a> BoundPipeline<'a> {
         &mut self,
         buffers: &[VertexBufferId],
         offsets: &[usize],
-        strides: &[usize],
+        strides: &[i32],
     ) {
         self.renderer
             .backend

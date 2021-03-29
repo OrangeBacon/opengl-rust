@@ -123,7 +123,7 @@ impl Layer for Triangle {
         self.camera.update(state, dt);
     }
 
-    fn render(&mut self, state: &mut EngineStateRef) {
+    fn render(&mut self, state: &mut EngineStateRef) -> Result<()> {
         state.clear(0.3, 0.3, 0.5);
 
         let (width, height) = state.window.size();
@@ -136,6 +136,10 @@ impl Layer for Triangle {
         );
 
         let view = self.camera.get_view();
+
+        self.model.render(state, &proj, &view)?;
+
+        Ok(())
     }
 }
 
