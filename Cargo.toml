@@ -15,8 +15,7 @@ walkdir = "2"
 [workspace]
 members = [
     "lib/engine",
-    "lib/gl",
-    "lib/gl_derive",
+    "lib/gl",t
 ]
 
 [profile.dev.package."*"]

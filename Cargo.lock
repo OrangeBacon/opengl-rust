@@ -319,7 +319,6 @@ dependencies = [
  "anyhow",
  "base64",
  "gl",
- "gl_derive",
  "image",
  "imgui",
  "imgui-opengl-renderer",
@@ -408,15 +407,6 @@ name = "gl"
 version = "0.1.0"
 dependencies = [
  "gl_generator 0.14.0",
-]
-
-[[package]]
-name = "gl_derive"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -791,7 +781,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "engine",
- "gl_derive",
  "native-dialog",
  "walkdir",
 ]
