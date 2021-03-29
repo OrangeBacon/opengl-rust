@@ -4,16 +4,13 @@ pub mod data;
 pub mod gltf;
 pub mod imgui;
 pub mod model;
+pub mod renderer;
 pub mod resources;
 pub mod scene;
 pub mod texture;
 pub mod window;
-pub mod renderer;
 
 mod data_uri;
-
-mod shader;
-pub use shader::{Error, Program, Shader};
 
 mod create_shader;
 pub use create_shader::DynamicShader;

@@ -5,7 +5,6 @@ authors = ["OrangeBacon <computer.backup.15@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-gl_derive = { path = "lib/gl_derive" }
 engine = { path = "lib/engine" }
 native-dialog = "0.5"
 anyhow = "1.0"
