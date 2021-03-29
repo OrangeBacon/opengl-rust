@@ -1179,9 +1179,7 @@ impl GPUPrimitive {
         proj: &glm::Mat4,
         model: &glm::Mat4,
     ) -> Result<()> {
-        if self.culling {
-            renderer.backface_culling(true);
-        }
+        renderer.backface_culling(self.culling);
 
         let mut pipeline = renderer.bind_pipeline(self.pipeline);
         pipeline.bind_matrix("view", *view);
@@ -1208,12 +1206,6 @@ impl GPUPrimitive {
             );
         } else {
             pipeline.draw(self.draw_mode, 0, self.vertex_count as _);
-        }
-
-        drop(pipeline);
-
-        if self.culling {
-            renderer.backface_culling(false);
         }
 
         Ok(())

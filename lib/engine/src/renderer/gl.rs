@@ -51,6 +51,8 @@ pub struct GlRenderer {
 
     texture_units: Vec<bool>,
     active_textures: HashMap<PipelineId, Vec<usize>>,
+
+    backface_culling_enabled: bool,
 }
 
 impl GlRenderer {
@@ -76,6 +78,7 @@ impl GlRenderer {
         GlRenderer {
             gl,
             id: 0,
+            backface_culling_enabled: false,
             textures: HashMap::new(),
             buffers: HashMap::new(),
             pipelines: HashMap::new(),
@@ -100,13 +103,16 @@ impl RendererBackend for GlRenderer {
     }
 
     fn backface_culling(&mut self, enable: bool) {
-        if enable {
+        // cache whether culling is enabled or not to reduce draw calls
+        if enable && !self.backface_culling_enabled {
             unsafe {
                 self.gl.Enable(gl::CULL_FACE);
                 self.gl.CullFace(gl::BACK);
             }
-        } else {
+            self.backface_culling_enabled = true;
+        } else if self.backface_culling_enabled {
             unsafe { self.gl.Disable(gl::CULL_FACE) }
+            self.backface_culling_enabled = false;
         }
     }
 
@@ -165,7 +171,7 @@ impl RendererBackend for GlRenderer {
         self.id += 1;
 
         self.pipelines
-            .insert(id, GlPipeline::new(pipeline, &self.gl)?);
+            .insert(id, GlPipeline::new(pipeline, self.gl.clone())?);
 
         Ok(PipelineId(id))
     }
@@ -318,12 +324,13 @@ impl RendererBackend for GlRenderer {
 }
 
 struct GlPipeline {
+    gl: gl::Gl,
     program_id: GLuint,
     vao: GLuint,
 }
 
 impl GlPipeline {
-    fn new(pipeline: Pipeline, gl: &gl::Gl) -> Result<Self, GlError> {
+    fn new(pipeline: Pipeline, gl: gl::Gl) -> Result<Self, GlError> {
         let shaders = vec![
             (pipeline.vertex_shader, gl::VERTEX_SHADER),
             (pipeline.fragment_shader, gl::FRAGMENT_SHADER),
@@ -341,10 +348,10 @@ impl GlPipeline {
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
-            .map(|(source, kind)| shader_from_source(gl, &source, kind))
+            .map(|(source, kind)| shader_from_source(&gl, &source, kind))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let program_id = program_from_shaders(gl, &shaders)?;
+        let program_id = program_from_shaders(&gl, &shaders)?;
 
         // Create a vao to store the vertex attribute types using OpenGL DSA functions
         // If not using DSA then this would depend on vertex buffers being bound,
@@ -386,13 +393,26 @@ impl GlPipeline {
             }
         }
 
-        Ok(GlPipeline { program_id, vao })
+        Ok(GlPipeline {
+            program_id,
+            vao,
+            gl,
+        })
     }
 
     fn bind(&self, gl: &gl::Gl) {
         unsafe {
             gl.UseProgram(self.program_id);
             gl.BindVertexArray(self.vao);
+        }
+    }
+}
+
+impl Drop for GlPipeline {
+    fn drop(&mut self) {
+        unsafe {
+            self.gl.DeleteVertexArrays(1, &self.vao);
+            self.gl.DeleteProgram(self.program_id);
         }
     }
 }
