@@ -4,7 +4,9 @@ use crate::{
     bound::Bounds,
     gltf,
     renderer::{
-        self, DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, Renderer, TextureId,
+        self,
+        shader::{FragmentContext, Program, Type, VertexContext},
+        DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, Renderer, TextureId,
         VertexBufferId,
     },
     resources::{Error as ResourceError, Resources},
@@ -1129,6 +1131,8 @@ impl GPUPrimitive {
         let (vertex_buffers, vertex_offsets, vertex_strides) =
             Self::get_vertex_array_data(prim, model)?;
 
+        Self::create_shader_test(prim, model);
+
         Ok(Self {
             pipeline,
             vertex_count,
@@ -1210,4 +1214,101 @@ impl GPUPrimitive {
 
         Ok(())
     }
+
+    fn create_shader_test(prim: &gltf::Primitive, model: &Model) {
+        let components: Vec<Attribute> = prim
+            .attributes
+            .iter()
+            .enumerate()
+            .map(|(loc, (name, &accessor))| {
+                Some(Attribute {
+                    location: loc,
+                    accessor_idx: accessor as usize,
+                    kind: AttributeType::from(&name)?,
+                })
+            })
+            .flatten()
+            .collect();
+
+        let shader = Program::new(|ctx| {
+            ctx.vertex(|ctx| {
+                for comp in &components {
+                    comp.vertex(ctx);
+                }
+            });
+
+            ctx.frag(|ctx| {
+                for comp in &components {
+                    comp.frag(ctx, prim, model);
+                }
+            })
+        });
+
+        println!("{:#?}", shader);
+    }
+}
+
+struct Attribute {
+    kind: AttributeType,
+    location: usize,
+    accessor_idx: usize,
+}
+
+enum AttributeType {
+    Position,
+    Normal,
+    Tangent,
+    TexCoord(usize),
+    Color(usize),
+    Joints(usize),
+    Weights(usize),
+}
+
+impl AttributeType {
+    fn from(value: &str) -> Option<Self> {
+        let comps: Vec<_> = value.split('_').collect();
+
+        let ty = match comps.as_slice() {
+            ["POSITION"] => AttributeType::Position,
+            ["NORMAL"] => AttributeType::Normal,
+            ["TANGENT"] => AttributeType::Tangent,
+            ["TEXCOORD", a] => AttributeType::TexCoord(a.parse().ok()?),
+            ["COLOR", a] => AttributeType::Color(a.parse().ok()?),
+            ["JOINTS", a] => AttributeType::Joints(a.parse().ok()?),
+            ["WEIGHTS", a] => AttributeType::Weights(a.parse().ok()?),
+            _ => return None,
+        };
+
+        Some(ty)
+    }
+}
+
+impl Attribute {
+    fn vertex(&self, ctx: &mut VertexContext) {
+        match self.kind {
+            AttributeType::Position => {
+                ctx.uniform("view", Type::Mat4);
+                ctx.uniform("model", Type::Mat4);
+                ctx.uniform("projection", Type::Mat4);
+            }
+            _ => (),
+        }
+    }
+
+    fn frag(&self, ctx: &mut FragmentContext, prim: &gltf::Primitive, model: &Model) {
+        match self.kind {
+            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
+                ctx.uniform("base_color", Type::Sampler2D);
+            }
+            _ => (),
+        }
+    }
+}
+
+fn is_base_color(prim: &gltf::Primitive, model: &Model, idx: usize) -> bool {
+    prim.material
+        .and_then(|mat| model.gltf.materials[mat].pbr_metallic_roughness.as_ref())
+        .and_then(|pbr| pbr.base_color_texture.as_ref())
+        .map(|color| color.tex_coord == idx)
+        .unwrap_or(false)
 }
