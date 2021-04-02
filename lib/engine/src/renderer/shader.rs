@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut, Range};
+use std::ops::{Deref, DerefMut};
 
 use engine_proc_macro::context_globals;
 
@@ -9,6 +9,7 @@ use engine_proc_macro::context_globals;
 /// A complete shader program containing vertex, fragment, etc. shaders
 #[derive(Debug)]
 pub struct Program {
+    functions: Vec<Function>,
     vertex: Option<VertexShader>,
     frag: Option<FragmentShader>,
     uniforms: Vec<GlobalVariable>,
@@ -22,29 +23,27 @@ pub struct ProgramContext {
 /// A vertex shader's main function and input/output descriptions
 #[derive(Debug)]
 struct VertexShader {
-    main: Function,
     inputs: Vec<GlobalVariable>,
     outputs: Vec<GlobalVariable>,
 }
 
 #[context_globals(shader => inputs, outputs)]
-pub struct VertexContext<'a, 'b> {
-    program: &'a mut ProgramContext,
-    shader: &'b mut VertexShader,
+pub struct VertexContext<'a, 'b, 'c, 'd> {
+    function: &'a mut FunctionContext<'b, 'c>,
+    shader: &'d mut VertexShader,
 }
 
-/// A fragment shader's main function and input/output descriptions
+/// A fragment shader's input/output descriptions
 #[derive(Debug)]
 struct FragmentShader {
-    main: Function,
     outputs: Vec<GlobalVariable>,
     inputs: Vec<GlobalVariable>,
 }
 
 #[context_globals(shader => inputs, outputs)]
-pub struct FragmentContext<'a, 'b> {
-    program: &'a mut ProgramContext,
-    shader: &'b mut FragmentShader,
+pub struct FragmentContext<'a, 'b, 'c, 'd> {
+    function: &'a mut FunctionContext<'b, 'c>,
+    shader: &'d mut FragmentShader,
 }
 
 /// A single function in a shader program, either a shader main function or
@@ -55,6 +54,11 @@ struct Function {
     variables: Vec<LocalVariable>,
 }
 
+pub struct FunctionContext<'a, 'b> {
+    program: &'a mut ProgramContext,
+    function: &'b Function,
+}
+
 /// An ssa basic block, contains no control flow, all jumps will be at the end
 /// of the block, all entry will be at the start of the block
 #[derive(Debug)]
@@ -63,19 +67,22 @@ struct Block {
 }
 
 #[derive(Debug, Clone)]
+/// An single expression's AST
 pub enum Expression {
+    /// Call a function, this is most expressions, including binary operators
     CallBuiltin {
         function: BuiltinFunction,
         arguments: Vec<Expression>,
     },
-    MakeFloat {
-        value: f32,
-    },
-    GetVariable {
-        variable: VariableId,
-    },
+
+    /// Create a constant floating point value
+    MakeFloat { value: f32 },
+
+    /// Read a variable
+    GetVariable { variable: VariableId },
 }
 
+/// A single operation in ssa form
 #[derive(Debug, Clone)]
 enum Statement {
     CallBuiltin {
@@ -89,24 +96,22 @@ enum Statement {
     },
 }
 
+/// The list of currently supported functions builtin to the shaders
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinFunction {
     Add,
-    BitAnd,
-    BitOr,
-    BitXor,
     Div,
     Mul,
     Rem,
     Sub,
     Texture,
-    MakeVec4,
-    Output,
-    AccessField,
+    MakeVec,
     GetBuiltin,
     SetBuiltin,
+    SetGlobal,
 }
 
+/// Variables automagically provided by a shader without having to declare them
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinVariable {
     VertexPosition,
@@ -169,6 +174,7 @@ impl Program {
             vertex: None,
             frag: None,
             uniforms: vec![],
+            functions: vec![],
         };
         let mut ctx = ProgramContext::new(program);
 
@@ -181,6 +187,11 @@ impl Program {
 impl ProgramContext {
     fn new(program: Program) -> Self {
         ProgramContext { program }
+    }
+
+    pub fn function(&mut self, constructor: impl FnOnce(&mut FunctionContext)) {
+        let function = Function::new(self, constructor);
+        self.program.functions.push(function);
     }
 
     pub fn vertex(&mut self, constructor: impl FnOnce(&mut VertexContext)) {
@@ -199,36 +210,54 @@ impl VertexShader {
         let mut shader = VertexShader {
             outputs: vec![],
             inputs: vec![],
-            main: Function {
-                blocks: vec![],
-                variables: vec![],
-            },
+        };
+
+        let mut func = Function::new_empty();
+        let mut fn_ctx = FunctionContext {
+            function: &mut func,
+            program: prog,
         };
 
         let mut ctx = VertexContext {
-            program: prog,
+            function: &mut fn_ctx,
             shader: &mut shader,
         };
 
         constructor(&mut ctx);
 
         shader
+    }
+}
+
+impl<'a, 'b, 'c, 'd> Deref for VertexContext<'a, 'b, 'c, 'd> {
+    type Target = FunctionContext<'b, 'c>;
+
+    fn deref(&self) -> &Self::Target {
+        self.function
+    }
+}
+
+impl<'a, 'b, 'c, 'd> DerefMut for VertexContext<'a, 'b, 'c, 'd> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.function
     }
 }
 
 impl FragmentShader {
     fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut FragmentContext)) -> Self {
         let mut shader = FragmentShader {
-            inputs: vec![],
             outputs: vec![],
-            main: Function {
-                blocks: vec![],
-                variables: vec![],
-            },
+            inputs: vec![],
+        };
+
+        let mut func = Function::new_empty();
+        let mut fn_ctx = FunctionContext {
+            function: &mut func,
+            program: prog,
         };
 
         let mut ctx = FragmentContext {
-            program: prog,
+            function: &mut fn_ctx,
             shader: &mut shader,
         };
 
@@ -238,7 +267,46 @@ impl FragmentShader {
     }
 }
 
-impl<'a, 'b> Deref for VertexContext<'a, 'b> {
+impl<'a, 'b, 'c, 'd> Deref for FragmentContext<'a, 'b, 'c, 'd> {
+    type Target = FunctionContext<'b, 'c>;
+
+    fn deref(&self) -> &Self::Target {
+        self.function
+    }
+}
+
+impl<'a, 'b, 'c, 'd> DerefMut for FragmentContext<'a, 'b, 'c, 'd> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.function
+    }
+}
+
+impl Function {
+    fn new(program: &mut ProgramContext, constructor: impl FnOnce(&mut FunctionContext)) -> Self {
+        let mut func = Function::new_empty();
+        let mut ctx = FunctionContext {
+            program,
+            function: &mut func,
+        };
+
+        constructor(&mut ctx);
+
+        func
+    }
+
+    fn new_empty() -> Self {
+        Function {
+            blocks: vec![],
+            variables: vec![],
+        }
+    }
+}
+
+impl<'a, 'b> FunctionContext<'a, 'b> {
+    pub fn set_global(&mut self, global: Expression, value: Expression) {}
+}
+
+impl<'a, 'b> Deref for FunctionContext<'a, 'b> {
     type Target = ProgramContext;
 
     fn deref(&self) -> &Self::Target {
@@ -246,32 +314,24 @@ impl<'a, 'b> Deref for VertexContext<'a, 'b> {
     }
 }
 
-impl<'a, 'b> DerefMut for VertexContext<'a, 'b> {
+impl<'a, 'b> DerefMut for FunctionContext<'a, 'b> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.program
     }
 }
 
-impl<'a, 'b> Deref for FragmentContext<'a, 'b> {
-    type Target = ProgramContext;
-
-    fn deref(&self) -> &Self::Target {
-        self.program
+impl From<f32> for Expression {
+    fn from(value: f32) -> Self {
+        Expression::MakeFloat { value }
     }
 }
 
-impl<'a, 'b> DerefMut for FragmentContext<'a, 'b> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.program
-    }
-}
-
-macro_rules! ExpressionOpSelf {
+macro_rules! ExpressionOp {
     ($op:ident, $func:ident) => {
         impl ::std::ops::$op for Expression {
             type Output = Self;
 
-            fn $func(self, rhs: Self) -> Self {
+            fn $func(self, rhs: Expression) -> Self {
                 Expression::CallBuiltin {
                     function: BuiltinFunction::$op,
                     arguments: vec![self, rhs],
@@ -281,25 +341,9 @@ macro_rules! ExpressionOpSelf {
     };
 }
 
-macro_rules! ExpressionOpF32 {
-    ($op:ident, $func:ident) => {
-        impl ::std::ops::$op<f32> for Expression {
-            type Output = Self;
-
-            fn $func(self, rhs: f32) -> Self {
-                Expression::CallBuiltin {
-                    function: BuiltinFunction::$op,
-                    arguments: vec![self, Expression::MakeFloat { value: rhs }],
-                }
-            }
-        }
-    };
-}
-
 macro_rules! ExpressionOps {
     ($op:ident, $func:ident) => {
-        ExpressionOpSelf!($op, $func);
-        ExpressionOpF32!($op, $func);
+        ExpressionOp!($op, $func);
     };
 
     ($($op:ident, $func:ident;)+) => {
@@ -309,11 +353,24 @@ macro_rules! ExpressionOps {
 
 ExpressionOps! {
     Add, add;
-    BitAnd, bitand;
-    BitOr, bitor;
-    BitXor, bitxor;
     Div, div;
     Mul, mul;
     Rem, rem;
     Sub, sub;
+}
+
+impl Expression {
+    pub fn texture(tex: Expression, uv: Expression) -> Expression {
+        Expression::CallBuiltin {
+            arguments: vec![tex, uv],
+            function: BuiltinFunction::Texture,
+        }
+    }
+
+    pub fn vec(components: &[Expression]) -> Expression {
+        Expression::CallBuiltin {
+            arguments: components.to_vec(),
+            function: BuiltinFunction::MakeVec,
+        }
+    }
 }

@@ -5,7 +5,7 @@ use crate::{
     gltf,
     renderer::{
         self,
-        shader::{FragmentContext, Program, Type, VertexContext},
+        shader::{Expression, FragmentContext, Program, Type, VertexContext},
         DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, Renderer, TextureId,
         VertexBufferId,
     },
@@ -390,7 +390,7 @@ impl Model {
                         stride,
                     )?
                 };
-            };
+            }
 
             // dispatch the correct accessor process
             match sparse.indices.component_type {
@@ -1238,8 +1238,16 @@ impl GPUPrimitive {
             });
 
             ctx.frag(|ctx| {
-                for comp in &components {
-                    comp.frag(ctx, prim, model);
+                let colors = components
+                    .iter()
+                    .map(|comp| comp.frag(ctx, prim, model))
+                    .flatten();
+                let output = colors.reduce(std::ops::Mul::mul);
+
+                let output_global = ctx.output("frag_color", Type::Vec4);
+
+                if let Some(output) = output {
+                    ctx.set_global(output_global, output);
                 }
             })
         });
@@ -1296,12 +1304,17 @@ impl Attribute {
         }
     }
 
-    fn frag(&self, ctx: &mut FragmentContext, prim: &gltf::Primitive, model: &Model) {
+    fn frag(
+        &self,
+        ctx: &mut FragmentContext,
+        prim: &gltf::Primitive,
+        model: &Model,
+    ) -> Option<Expression> {
         match self.kind {
             AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
-                ctx.uniform("base_color", Type::Sampler2D);
+                Some(ctx.uniform("base_color", Type::Sampler2D))
             }
-            _ => (),
+            _ => None,
         }
     }
 }
