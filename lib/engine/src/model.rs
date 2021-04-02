@@ -1290,6 +1290,7 @@ impl Attribute {
                 ctx.uniform("view", Type::Mat4);
                 ctx.uniform("model", Type::Mat4);
                 ctx.uniform("projection", Type::Mat4);
+                ctx.input_loc("Position", Type::Vec3, self.location);
             }
             _ => (),
         }

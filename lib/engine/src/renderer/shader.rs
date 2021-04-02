@@ -1,45 +1,64 @@
-use std::{
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-};
+use std::ops::{Deref, DerefMut, Range};
 
-// type declarations
+use engine_proc_macro::context_globals;
 
+// ================= //
+// type declarations //
+// ================= //
+
+/// A complete shader program containing vertex, fragment, etc. shaders
 #[derive(Debug)]
 pub struct Program {
     vertex: Option<VertexShader>,
     frag: Option<FragmentShader>,
-    uniforms: Vec<Variable>,
+    uniforms: Vec<GlobalVariable>,
 }
 
-pub trait Shader: Debug {
-    fn env(&self) -> &[Variable];
+#[context_globals(program => uniforms)]
+pub struct ProgramContext {
+    program: Program,
 }
 
+/// A vertex shader's main function and input/output descriptions
 #[derive(Debug)]
-pub struct VertexShader {
+struct VertexShader {
     main: Function,
-    variables: Vec<Variable>,
-    outputs: Vec<Variable>,
-    inputs: Vec<Variable>,
+    inputs: Vec<GlobalVariable>,
+    outputs: Vec<GlobalVariable>,
 }
 
+#[context_globals(shader => inputs, outputs)]
+pub struct VertexContext<'a, 'b> {
+    program: &'a mut ProgramContext,
+    shader: &'b mut VertexShader,
+}
+
+/// A fragment shader's main function and input/output descriptions
 #[derive(Debug)]
-pub struct FragmentShader {
+struct FragmentShader {
     main: Function,
-    variables: Vec<Variable>,
-    outputs: Vec<Variable>,
-    inputs: Vec<Variable>,
+    outputs: Vec<GlobalVariable>,
+    inputs: Vec<GlobalVariable>,
 }
 
+#[context_globals(shader => inputs, outputs)]
+pub struct FragmentContext<'a, 'b> {
+    program: &'a mut ProgramContext,
+    shader: &'b mut FragmentShader,
+}
+
+/// A single function in a shader program, either a shader main function or
+/// a utility function
 #[derive(Debug)]
-pub struct Function {
+struct Function {
     blocks: Vec<Block>,
-    variables: Vec<Variable>,
+    variables: Vec<LocalVariable>,
 }
 
+/// An ssa basic block, contains no control flow, all jumps will be at the end
+/// of the block, all entry will be at the start of the block
 #[derive(Debug)]
-pub struct Block {
+struct Block {
     statements: Vec<Statement>,
 }
 
@@ -58,7 +77,7 @@ pub enum Expression {
 }
 
 #[derive(Debug, Clone)]
-pub enum Statement {
+enum Statement {
     CallBuiltin {
         function: BuiltinFunction,
         arguments: Vec<VariableId>,
@@ -84,14 +103,26 @@ pub enum BuiltinFunction {
     MakeVec4,
     Output,
     AccessField,
+    GetBuiltin,
+    SetBuiltin,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct VariableId(usize, VariableAllocationContext);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinVariable {
+    VertexPosition,
+}
 
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum VariableAllocationContext {
-    Uniform,
+pub enum VariableId {
+    Local(usize),
+    Global(usize, GlobalAllocationContext),
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GlobalAllocationContext {
+    ProgramUniform,
     VertexInput,
     VertexOutput,
     FragmentInput,
@@ -99,14 +130,16 @@ enum VariableAllocationContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Variable {
+struct LocalVariable {
     name: String,
     ty: Type,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BuiltinVariable {
-    VertexPosition,
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GlobalVariable {
+    name: String,
+    ty: Type,
+    start_location: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,9 +154,15 @@ impl Type {
     #![allow(non_upper_case_globals)]
 
     pub const Mat4: Type = Type::Matrix(4, 4);
+    pub const Vec4: Type = Type::Vector(4);
+    pub const Vec3: Type = Type::Vector(3);
+    pub const Vec2: Type = Type::Vector(2);
 }
 
-// implementations
+// =============== //
+// implementations //
+// =============== //
+
 impl Program {
     pub fn new(constructor: impl FnOnce(&mut ProgramContext)) -> Self {
         let program = Program {
@@ -137,10 +176,6 @@ impl Program {
 
         ctx.program
     }
-}
-
-pub struct ProgramContext {
-    program: Program,
 }
 
 impl ProgramContext {
@@ -157,25 +192,11 @@ impl ProgramContext {
         let shader = FragmentShader::new(self, constructor);
         self.program.frag = Some(shader);
     }
-
-    pub fn uniform(&mut self, name: &str, ty: Type) -> Expression {
-        let id = self.program.uniforms.len();
-
-        self.program.uniforms.push(Variable {
-            name: name.to_string(),
-            ty,
-        });
-
-        Expression::GetVariable {
-            variable: VariableId(id, VariableAllocationContext::Uniform),
-        }
-    }
 }
 
 impl VertexShader {
     fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut VertexContext)) -> Self {
         let mut shader = VertexShader {
-            variables: vec![],
             outputs: vec![],
             inputs: vec![],
             main: Function {
@@ -195,16 +216,9 @@ impl VertexShader {
     }
 }
 
-impl Shader for VertexShader {
-    fn env(&self) -> &[Variable] {
-        &self.variables
-    }
-}
-
 impl FragmentShader {
     fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut FragmentContext)) -> Self {
         let mut shader = FragmentShader {
-            variables: vec![],
             inputs: vec![],
             outputs: vec![],
             main: Function {
@@ -224,45 +238,6 @@ impl FragmentShader {
     }
 }
 
-impl Shader for FragmentShader {
-    fn env(&self) -> &[Variable] {
-        &self.variables
-    }
-}
-
-pub struct VertexContext<'a, 'b> {
-    program: &'a mut ProgramContext,
-    shader: &'b mut VertexShader,
-}
-
-impl<'a, 'b> VertexContext<'a, 'b> {
-    pub fn input(&mut self, name: &str, ty: Type) -> Expression {
-        let id = self.shader.inputs.len();
-
-        self.shader.inputs.push(Variable {
-            name: name.to_string(),
-            ty,
-        });
-
-        Expression::GetVariable {
-            variable: VariableId(id, VariableAllocationContext::VertexInput),
-        }
-    }
-
-    pub fn output(&mut self, name: &str, ty: Type) -> Expression {
-        let id = self.shader.outputs.len();
-
-        self.shader.outputs.push(Variable {
-            name: name.to_string(),
-            ty,
-        });
-
-        Expression::GetVariable {
-            variable: VariableId(id, VariableAllocationContext::VertexOutput),
-        }
-    }
-}
-
 impl<'a, 'b> Deref for VertexContext<'a, 'b> {
     type Target = ProgramContext;
 
@@ -274,39 +249,6 @@ impl<'a, 'b> Deref for VertexContext<'a, 'b> {
 impl<'a, 'b> DerefMut for VertexContext<'a, 'b> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.program
-    }
-}
-
-pub struct FragmentContext<'a, 'b> {
-    program: &'a mut ProgramContext,
-    shader: &'b mut FragmentShader,
-}
-
-impl<'a, 'b> FragmentContext<'a, 'b> {
-    pub fn input(&mut self, name: &str, ty: Type) -> Expression {
-        let id = self.shader.inputs.len();
-
-        self.shader.inputs.push(Variable {
-            name: name.to_string(),
-            ty,
-        });
-
-        Expression::GetVariable {
-            variable: VariableId(id, VariableAllocationContext::FragmentInput),
-        }
-    }
-
-    pub fn output(&mut self, name: &str, ty: Type) -> Expression {
-        let id = self.shader.outputs.len();
-
-        self.shader.outputs.push(Variable {
-            name: name.to_string(),
-            ty,
-        });
-
-        Expression::GetVariable {
-            variable: VariableId(id, VariableAllocationContext::FragmentOutput),
-        }
     }
 }
 

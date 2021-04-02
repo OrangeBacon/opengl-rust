@@ -318,6 +318,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64",
+ "engine_proc_macro",
  "gl",
  "image",
  "imgui",
@@ -330,6 +331,14 @@ dependencies = [
  "serde_repr",
  "slotmap",
  "thiserror",
+]
+
+[[package]]
+name = "engine_proc_macro"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]

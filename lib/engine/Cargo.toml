@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 gl = { path = "../gl" }
+engine_proc_macro = { path = "../engine_proc_macro" }
 
 sdl2 = { version = "0.34.3", features = ["bundled", "static-link"] }
 imgui = "0.6.1"
