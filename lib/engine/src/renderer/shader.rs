@@ -1,10 +1,37 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
 use engine_proc_macro::context_globals;
+use thiserror::Error;
 
 // ================= //
 // type declarations //
 // ================= //
+
+#[derive(Debug, Error)]
+pub enum ShaderCreationError {
+    #[error("Found multiple errors while compiling shader:\n{errors}")]
+    ErrorList { errors: ErrorList },
+
+    #[error(transparent)]
+    OtherError { error: anyhow::Error },
+}
+
+#[derive(Debug)]
+pub struct ErrorList(Vec<ShaderCreationError>);
+
+impl fmt::Display for ErrorList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (idx, err) in self.0.iter().enumerate() {
+            write!(f, "Error {}:\n", idx)?;
+            write!(f, "{}\n\n", err)?;
+        }
+
+        Ok(())
+    }
+}
 
 /// A complete shader program containing vertex, fragment, etc. shaders
 #[derive(Debug)]
@@ -13,6 +40,7 @@ pub struct Program {
     vertex: Option<VertexShader>,
     frag: Option<FragmentShader>,
     uniforms: Vec<GlobalVariable>,
+    errors: Vec<ShaderCreationError>,
 }
 
 #[context_globals(program => uniforms)]
@@ -175,12 +203,23 @@ impl Program {
             frag: None,
             uniforms: vec![],
             functions: vec![],
+            errors: vec![],
         };
         let mut ctx = ProgramContext::new(program);
 
         constructor(&mut ctx);
 
         ctx.program
+    }
+
+    pub fn ok(&mut self) -> Result<(), ShaderCreationError> {
+        if !self.errors.is_empty() {
+            Err(ShaderCreationError::ErrorList {
+                errors: ErrorList(std::mem::take(&mut self.errors)),
+            })
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -202,6 +241,18 @@ impl ProgramContext {
     pub fn frag(&mut self, constructor: impl FnOnce(&mut FragmentContext)) {
         let shader = FragmentShader::new(self, constructor);
         self.program.frag = Some(shader);
+    }
+
+    pub fn emit_error(&mut self, err: anyhow::Error) {
+        self.program
+            .errors
+            .push(ShaderCreationError::OtherError { error: err });
+    }
+
+    pub fn error(&mut self, err: &str) {
+        self.program.errors.push(ShaderCreationError::OtherError {
+            error: anyhow::anyhow!(err.to_string()),
+        })
     }
 }
 
@@ -282,6 +333,7 @@ impl<'a, 'b, 'c, 'd> DerefMut for FragmentContext<'a, 'b, 'c, 'd> {
 }
 
 impl Function {
+    /// create a function in a shader
     fn new(program: &mut ProgramContext, constructor: impl FnOnce(&mut FunctionContext)) -> Self {
         let mut func = Function::new_empty();
         let mut ctx = FunctionContext {
@@ -294,11 +346,19 @@ impl Function {
         func
     }
 
+    /// create a function with no code inside
     fn new_empty() -> Self {
         Function {
             blocks: vec![],
             variables: vec![],
         }
+    }
+
+    /// creates an immutable local variable and sets its value
+    fn local_variable(&mut self, name: &str, ty: Type, value: Statement) -> VariableId {
+        let id = self.variables.len();
+
+        VariableId::Local(id)
     }
 }
 

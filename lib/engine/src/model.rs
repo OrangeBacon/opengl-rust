@@ -5,7 +5,7 @@ use crate::{
     gltf,
     renderer::{
         self,
-        shader::{Expression, FragmentContext, Program, Type, VertexContext},
+        shader::{Expression, FragmentContext, Program, ShaderCreationError, Type, VertexContext},
         DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, Renderer, TextureId,
         VertexBufferId,
     },
@@ -104,6 +104,9 @@ pub enum ModelError {
 
     #[error("Trying to bind to an accessor without a defined buffer view")]
     AccessorWithoutBuffer,
+
+    #[error("Shader compilation error while loading model:\n{source}")]
+    ShaderCompilation { source: ShaderCreationError },
 }
 
 /// A 3d gltf model, including all its data.  Not dependant upon any rendering
@@ -1131,7 +1134,7 @@ impl GPUPrimitive {
         let (vertex_buffers, vertex_offsets, vertex_strides) =
             Self::get_vertex_array_data(prim, model)?;
 
-        Self::create_shader_test(prim, model);
+        Self::create_shader_test(prim, model)?;
 
         Ok(Self {
             pipeline,
@@ -1215,7 +1218,7 @@ impl GPUPrimitive {
         Ok(())
     }
 
-    fn create_shader_test(prim: &gltf::Primitive, model: &Model) {
+    fn create_shader_test(prim: &gltf::Primitive, model: &Model) -> Result<(), ModelError> {
         let components: Vec<Attribute> = prim
             .attributes
             .iter()
@@ -1230,7 +1233,7 @@ impl GPUPrimitive {
             .flatten()
             .collect();
 
-        let shader = Program::new(|ctx| {
+        let mut shader = Program::new(|ctx| {
             ctx.vertex(|ctx| {
                 for comp in &components {
                     comp.vertex(ctx);
@@ -1248,11 +1251,19 @@ impl GPUPrimitive {
 
                 if let Some(output) = output {
                     ctx.set_global(output_global, output);
+                } else {
+                    ctx.error("Model fragment shader created without colour output");
                 }
             })
         });
 
+        shader
+            .ok()
+            .map_err(|e| ModelError::ShaderCompilation { source: e })?;
+
         println!("{:#?}", shader);
+
+        Ok(())
     }
 }
 
