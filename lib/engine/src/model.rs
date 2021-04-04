@@ -16,6 +16,7 @@ use crate::{
 };
 use anyhow::Result;
 use nalgebra_glm as glm;
+use renderer::shader::BuiltinVariable;
 use slotmap::{DefaultKey, SlotMap};
 use thiserror::Error;
 
@@ -1306,10 +1307,14 @@ impl Attribute {
     fn vertex(&self, ctx: &mut VertexContext) {
         match self.kind {
             AttributeType::Position => {
-                ctx.uniform("view", Type::Mat4);
-                ctx.uniform("model", Type::Mat4);
-                ctx.uniform("projection", Type::Mat4);
-                ctx.input_loc("Position", Type::Vec3, self.location);
+                let view = ctx.uniform("view", Type::Mat4);
+                let model = ctx.uniform("model", Type::Mat4);
+                let projection = ctx.uniform("projection", Type::Mat4);
+                let position = ctx.input_loc("Position", Type::Vec3, self.location);
+
+                let value = view * model * projection * Expression::vec(&[position, 1.0.into()]);
+
+                ctx.set_builtin(BuiltinVariable::VertexPosition, value)
             }
             _ => (),
         }

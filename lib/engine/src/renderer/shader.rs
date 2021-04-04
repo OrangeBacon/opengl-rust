@@ -17,6 +17,9 @@ pub enum ShaderCreationError {
 
     #[error(transparent)]
     OtherError { error: anyhow::Error },
+
+    #[error("Cannot set name of global from local context")]
+    GlobalNameSet,
 }
 
 #[derive(Debug)]
@@ -51,6 +54,7 @@ pub struct ProgramContext {
 /// A vertex shader's main function and input/output descriptions
 #[derive(Debug)]
 struct VertexShader {
+    main: usize,
     inputs: Vec<GlobalVariable>,
     outputs: Vec<GlobalVariable>,
 }
@@ -64,6 +68,7 @@ pub struct VertexContext<'a, 'b, 'c, 'd> {
 /// A fragment shader's input/output descriptions
 #[derive(Debug)]
 struct FragmentShader {
+    main: usize,
     outputs: Vec<GlobalVariable>,
     inputs: Vec<GlobalVariable>,
 }
@@ -84,7 +89,7 @@ struct Function {
 
 pub struct FunctionContext<'a, 'b> {
     program: &'a mut ProgramContext,
-    function: &'b Function,
+    function: &'b mut Function,
 }
 
 /// An ssa basic block, contains no control flow, all jumps will be at the end
@@ -121,6 +126,10 @@ enum Statement {
     MakeFloat {
         value: f32,
         variable: VariableId,
+    },
+    MakeBuiltinVariable {
+        variable: BuiltinVariable,
+        result: VariableId,
     },
 }
 
@@ -181,6 +190,7 @@ pub enum Type {
     Matrix(usize, usize),
     Floating,
     Sampler2D,
+    Unknown,
 }
 
 impl Type {
@@ -261,6 +271,7 @@ impl VertexShader {
         let mut shader = VertexShader {
             outputs: vec![],
             inputs: vec![],
+            main: 0,
         };
 
         let mut func = Function::new_empty();
@@ -275,6 +286,11 @@ impl VertexShader {
         };
 
         constructor(&mut ctx);
+
+        let fn_id = prog.program.functions.len();
+        shader.main = fn_id;
+
+        prog.program.functions.push(func);
 
         shader
     }
@@ -299,6 +315,7 @@ impl FragmentShader {
         let mut shader = FragmentShader {
             outputs: vec![],
             inputs: vec![],
+            main: 0,
         };
 
         let mut func = Function::new_empty();
@@ -313,6 +330,11 @@ impl FragmentShader {
         };
 
         constructor(&mut ctx);
+
+        let fn_id = prog.program.functions.len();
+        shader.main = fn_id;
+
+        prog.program.functions.push(func);
 
         shader
     }
@@ -349,21 +371,117 @@ impl Function {
     /// create a function with no code inside
     fn new_empty() -> Self {
         Function {
-            blocks: vec![],
+            blocks: vec![Block { statements: vec![] }],
             variables: vec![],
         }
     }
 
-    /// creates an immutable local variable and sets its value
-    fn local_variable(&mut self, name: &str, ty: Type, value: Statement) -> VariableId {
+    /// creates an immutable local variable that is unused
+    fn local_variable(&mut self, name: &str, ty: Type) -> VariableId {
         let id = self.variables.len();
 
+        let name = if name.is_empty() {
+            String::new()
+        } else {
+            name.to_string()
+        };
+
+        self.variables.push(LocalVariable { name, ty });
+
         VariableId::Local(id)
+    }
+
+    fn set_var_name(&mut self, program: &mut Program, name: &str, var: VariableId) {
+        match var {
+            VariableId::Local(id) => {
+                let name = name.to_string();
+                self.variables[id].name = name;
+            }
+            VariableId::Global(_, _) => {
+                program.errors.push(ShaderCreationError::GlobalNameSet);
+            }
+        }
+    }
+
+    fn expr_to_variable(&mut self, program: &mut Program, expr: &Expression) -> VariableId {
+        match expr {
+            &Expression::GetVariable { variable } => variable,
+            &Expression::MakeFloat { value } => {
+                let variable = self.local_variable("", Type::Floating);
+                self.set_var_name(program, &format!("f32_{}", self.variables.len()), variable);
+
+                self.blocks[0]
+                    .statements
+                    .push(Statement::MakeFloat { value, variable });
+
+                variable
+            }
+            &Expression::CallBuiltin {
+                ref arguments,
+                function,
+            } => {
+                let arguments = arguments
+                    .iter()
+                    .map(|expr| self.expr_to_variable(program, expr))
+                    .collect();
+
+                let result = self.local_variable("", Type::Unknown);
+
+                self.blocks[0].statements.push(Statement::CallBuiltin {
+                    function,
+                    result: Some(result),
+                    arguments,
+                });
+
+                result
+            }
+        }
     }
 }
 
 impl<'a, 'b> FunctionContext<'a, 'b> {
-    pub fn set_global(&mut self, global: Expression, value: Expression) {}
+    pub fn set_global(&mut self, global: Expression, value: Expression) {
+        let global = self
+            .function
+            .expr_to_variable(&mut self.program.program, &global);
+
+        let value = self
+            .function
+            .expr_to_variable(&mut self.program.program, &value);
+
+        self.function.blocks[0]
+            .statements
+            .push(Statement::CallBuiltin {
+                function: BuiltinFunction::SetGlobal,
+                arguments: vec![global, value],
+                result: None,
+            });
+    }
+
+    pub fn set_builtin(&mut self, builtin: BuiltinVariable, value: Expression) {
+        let builtin_var = self
+            .function
+            .local_variable(&builtin.to_string(), builtin.get_type());
+
+        self.function.blocks[0]
+            .statements
+            .push(Statement::MakeBuiltinVariable {
+                variable: builtin,
+                result: builtin_var,
+            });
+
+        let value = self
+            .function
+            .expr_to_variable(&mut self.program.program, &value);
+
+        self.function.blocks[0]
+            .statements
+            .push(Statement::CallBuiltin {
+                function: BuiltinFunction::SetBuiltin,
+                arguments: vec![builtin_var, value],
+                result: None,
+            })
+    }
 }
 
 impl<'a, 'b> Deref for FunctionContext<'a, 'b> {
@@ -431,6 +549,22 @@ impl Expression {
         Expression::CallBuiltin {
             arguments: components.to_vec(),
             function: BuiltinFunction::MakeVec,
+        }
+    }
+}
+
+impl BuiltinVariable {
+    fn get_type(&self) -> Type {
+        match self {
+            &BuiltinVariable::VertexPosition => Type::Vec4,
+        }
+    }
+}
+
+impl fmt::Display for BuiltinVariable {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &BuiltinVariable::VertexPosition => write!(f, "gl_Position"),
         }
     }
 }
