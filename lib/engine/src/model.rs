@@ -5,7 +5,9 @@ use crate::{
     gltf,
     renderer::{
         self,
-        shader::{Expression, FragmentContext, Program, ShaderCreationError, Type, VertexContext},
+        shader::{
+            BuiltinVariable, Expression, FunctionContext, Program, ShaderCreationError, Type,
+        },
         DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, Renderer, TextureId,
         VertexBufferId,
     },
@@ -16,7 +18,6 @@ use crate::{
 };
 use anyhow::Result;
 use nalgebra_glm as glm;
-use renderer::shader::BuiltinVariable;
 use slotmap::{DefaultKey, SlotMap};
 use thiserror::Error;
 
@@ -1304,7 +1305,7 @@ impl AttributeType {
 }
 
 impl Attribute {
-    fn vertex(&self, ctx: &mut VertexContext, prim: &gltf::Primitive, model: &Model) {
+    fn vertex(&self, ctx: &mut FunctionContext, prim: &gltf::Primitive, model: &Model) {
         match self.kind {
             AttributeType::Position => {
                 let view = ctx.uniform("view", Type::Mat4);
@@ -1340,7 +1341,7 @@ impl Attribute {
 
     fn frag(
         &self,
-        ctx: &mut FragmentContext,
+        ctx: &mut FunctionContext,
         prim: &gltf::Primitive,
         model: &Model,
     ) -> Option<Expression> {

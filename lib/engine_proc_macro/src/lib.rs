@@ -37,8 +37,6 @@ pub fn context_globals(attr: TokenStream, input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as ItemStruct);
 
     let name = input.ident.clone();
-    let name_str = name.to_string();
-    let name_main = name_str.strip_suffix("Context").unwrap_or(&name_str[..]);
 
     let accessor = attr.accessor;
     let vis = input.vis.clone();
@@ -57,8 +55,7 @@ pub fn context_globals(attr: TokenStream, input: TokenStream) -> TokenStream {
         let global_loc = Ident::new(&global_loc, global.span());
 
         // infer the name of the GlobalAllocationContext enum varient
-        let mut allocation = String::from(name_main);
-        allocation.push(
+        let mut allocation = String::from(
             global_name
                 .chars()
                 .next()
@@ -74,28 +71,34 @@ pub fn context_globals(attr: TokenStream, input: TokenStream) -> TokenStream {
             #vis fn #global_name(&mut self, name: &str, ty: Type) -> Expression {
                 let id = self.#accessor.#global.len();
 
-                self.#accessor.#global.push(GlobalVariable {
+                self.#accessor.#global.push(Variable {
                     name: name.to_string(),
                     ty,
                     start_location: None,
                 });
 
                 Expression::GetVariable {
-                    variable: VariableId::Global(id, GlobalAllocationContext::#allocation),
+                    variable: VariableId {
+                        id,
+                        kind: VariableAllocationContext::#allocation
+                    },
                 }
             }
 
             #vis fn #global_loc(&mut self, name: &str, ty: Type, start_location: usize) -> Expression {
                 let id = self.#accessor.#global.len();
 
-                self.#accessor.#global.push(GlobalVariable {
+                self.#accessor.#global.push(Variable {
                     name: name.to_string(),
                     ty,
                     start_location: Some(start_location),
                 });
 
                 Expression::GetVariable {
-                    variable: VariableId::Global(id, GlobalAllocationContext::#allocation),
+                    variable: VariableId {
+                        id,
+                        kind: VariableAllocationContext::#allocation
+                    },
                 }
             }
         });

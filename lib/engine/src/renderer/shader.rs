@@ -17,9 +17,6 @@ pub enum ShaderCreationError {
 
     #[error(transparent)]
     OtherError { error: anyhow::Error },
-
-    #[error("Cannot set name of global from local context")]
-    GlobalNameSet,
 }
 
 #[derive(Debug)]
@@ -42,7 +39,7 @@ pub struct Program {
     functions: Vec<Function>,
     vertex: Option<VertexShader>,
     frag: Option<FragmentShader>,
-    uniforms: Vec<GlobalVariable>,
+    uniforms: Vec<Variable>,
     errors: Vec<ShaderCreationError>,
 }
 
@@ -55,28 +52,12 @@ pub struct ProgramContext {
 #[derive(Debug)]
 struct VertexShader {
     main: usize,
-    inputs: Vec<GlobalVariable>,
-    outputs: Vec<GlobalVariable>,
-}
-
-#[context_globals(shader => inputs, outputs)]
-pub struct VertexContext<'a, 'b, 'c, 'd> {
-    function: &'a mut FunctionContext<'b, 'c>,
-    shader: &'d mut VertexShader,
 }
 
 /// A fragment shader's input/output descriptions
 #[derive(Debug)]
 struct FragmentShader {
     main: usize,
-    outputs: Vec<GlobalVariable>,
-    inputs: Vec<GlobalVariable>,
-}
-
-#[context_globals(shader => inputs, outputs)]
-pub struct FragmentContext<'a, 'b, 'c, 'd> {
-    function: &'a mut FunctionContext<'b, 'c>,
-    shader: &'d mut FragmentShader,
 }
 
 /// A single function in a shader program, either a shader main function or
@@ -84,9 +65,12 @@ pub struct FragmentContext<'a, 'b, 'c, 'd> {
 #[derive(Debug)]
 struct Function {
     blocks: Vec<Block>,
-    variables: Vec<LocalVariable>,
+    variables: Vec<Variable>,
+    outputs: Vec<Variable>,
+    inputs: Vec<Variable>,
 }
 
+#[context_globals(function => inputs, outputs)]
 pub struct FunctionContext<'a, 'b> {
     program: &'a mut ProgramContext,
     function: &'b mut Function,
@@ -157,29 +141,22 @@ pub enum BuiltinVariable {
 
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum VariableId {
-    Local(usize),
-    Global(usize, GlobalAllocationContext),
+pub struct VariableId {
+    id: usize,
+    kind: VariableAllocationContext,
 }
 
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GlobalAllocationContext {
-    ProgramUniform,
-    VertexInput,
-    VertexOutput,
-    FragmentInput,
-    FragmentOutput,
+pub enum VariableAllocationContext {
+    Local,
+    Uniform,
+    Input,
+    Output,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct LocalVariable {
-    name: String,
-    ty: Type,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct GlobalVariable {
+struct Variable {
     name: String,
     ty: Type,
     start_location: Option<usize>,
@@ -244,12 +221,12 @@ impl ProgramContext {
         self.program.functions.push(function);
     }
 
-    pub fn vertex(&mut self, constructor: impl FnOnce(&mut VertexContext)) {
+    pub fn vertex(&mut self, constructor: impl FnOnce(&mut FunctionContext)) {
         let shader = VertexShader::new(self, constructor);
         self.program.vertex = Some(shader);
     }
 
-    pub fn frag(&mut self, constructor: impl FnOnce(&mut FragmentContext)) {
+    pub fn frag(&mut self, constructor: impl FnOnce(&mut FunctionContext)) {
         let shader = FragmentShader::new(self, constructor);
         self.program.frag = Some(shader);
     }
@@ -268,12 +245,8 @@ impl ProgramContext {
 }
 
 impl VertexShader {
-    fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut VertexContext)) -> Self {
-        let mut shader = VertexShader {
-            outputs: vec![],
-            inputs: vec![],
-            main: 0,
-        };
+    fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut FunctionContext)) -> Self {
+        let mut shader = VertexShader { main: 0 };
 
         let mut func = Function::new_empty();
         let mut fn_ctx = FunctionContext {
@@ -281,12 +254,7 @@ impl VertexShader {
             program: prog,
         };
 
-        let mut ctx = VertexContext {
-            function: &mut fn_ctx,
-            shader: &mut shader,
-        };
-
-        constructor(&mut ctx);
+        constructor(&mut fn_ctx);
 
         let fn_id = prog.program.functions.len();
         shader.main = fn_id;
@@ -294,30 +262,12 @@ impl VertexShader {
         prog.program.functions.push(func);
 
         shader
-    }
-}
-
-impl<'a, 'b, 'c, 'd> Deref for VertexContext<'a, 'b, 'c, 'd> {
-    type Target = FunctionContext<'b, 'c>;
-
-    fn deref(&self) -> &Self::Target {
-        self.function
-    }
-}
-
-impl<'a, 'b, 'c, 'd> DerefMut for VertexContext<'a, 'b, 'c, 'd> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.function
     }
 }
 
 impl FragmentShader {
-    fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut FragmentContext)) -> Self {
-        let mut shader = FragmentShader {
-            outputs: vec![],
-            inputs: vec![],
-            main: 0,
-        };
+    fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut FunctionContext)) -> Self {
+        let mut shader = FragmentShader { main: 0 };
 
         let mut func = Function::new_empty();
         let mut fn_ctx = FunctionContext {
@@ -325,12 +275,7 @@ impl FragmentShader {
             program: prog,
         };
 
-        let mut ctx = FragmentContext {
-            function: &mut fn_ctx,
-            shader: &mut shader,
-        };
-
-        constructor(&mut ctx);
+        constructor(&mut fn_ctx);
 
         let fn_id = prog.program.functions.len();
         shader.main = fn_id;
@@ -338,20 +283,6 @@ impl FragmentShader {
         prog.program.functions.push(func);
 
         shader
-    }
-}
-
-impl<'a, 'b, 'c, 'd> Deref for FragmentContext<'a, 'b, 'c, 'd> {
-    type Target = FunctionContext<'b, 'c>;
-
-    fn deref(&self) -> &Self::Target {
-        self.function
-    }
-}
-
-impl<'a, 'b, 'c, 'd> DerefMut for FragmentContext<'a, 'b, 'c, 'd> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.function
     }
 }
 
@@ -374,6 +305,8 @@ impl Function {
         Function {
             blocks: vec![Block { statements: vec![] }],
             variables: vec![],
+            inputs: vec![],
+            outputs: vec![],
         }
     }
 
@@ -387,19 +320,33 @@ impl Function {
             name.to_string()
         };
 
-        self.variables.push(LocalVariable { name, ty });
+        self.variables.push(Variable {
+            name,
+            ty,
+            start_location: None,
+        });
 
-        VariableId::Local(id)
+        VariableId {
+            id,
+            kind: VariableAllocationContext::Local,
+        }
     }
 
     fn set_var_name(&mut self, program: &mut Program, name: &str, var: VariableId) {
-        match var {
-            VariableId::Local(id) => {
-                let name = name.to_string();
-                self.variables[id].name = name;
+        let name = name.to_string();
+
+        match var.kind {
+            VariableAllocationContext::Local => {
+                self.variables[var.id].name = name;
             }
-            VariableId::Global(_, _) => {
-                program.errors.push(ShaderCreationError::GlobalNameSet);
+            VariableAllocationContext::Uniform => {
+                program.uniforms[var.id].name = name;
+            }
+            VariableAllocationContext::Input => {
+                self.inputs[var.id].name = name;
+            }
+            VariableAllocationContext::Output => {
+                self.outputs[var.id].name = name;
             }
         }
     }
@@ -584,35 +531,6 @@ impl BuiltinVariable {
 // Display Implementations //
 // ----------------------- //
 
-fn print_function_header(
-    f: &mut Formatter,
-    inp: &[GlobalVariable],
-    out: &[GlobalVariable],
-) -> fmt::Result {
-    write!(f, "(")?;
-    if inp.is_empty() {
-        write!(f, ") ")?;
-    } else {
-        writeln!(f, "")?;
-        for input in inp {
-            writeln!(f, "        {},", input.to_string("")?)?;
-        }
-        write!(f, "    ) ")?;
-    }
-
-    if out.len() == 1 {
-        write!(f, "-> {} ", out[0].to_string("")?)?;
-    } else if out.len() > 1 {
-        writeln!(f, "-> (")?;
-        for output in out {
-            writeln!(f, "        {},", output.to_string("")?)?;
-        }
-        write!(f, "    ) ")?;
-    }
-
-    Ok(())
-}
-
 impl Display for Program {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         writeln!(f, "Program {{")?;
@@ -623,13 +541,11 @@ impl Display for Program {
 
         if let Some(vertex) = &self.vertex {
             write!(f, "\n    vertex main")?;
-            print_function_header(f, &vertex.inputs, &vertex.outputs)?;
             self.functions[vertex.main].fmt(f, self)?;
         }
 
         if let Some(frag) = &self.frag {
             write!(f, "\n    fragment main")?;
-            print_function_header(f, &frag.inputs, &frag.outputs)?;
             self.functions[frag.main].fmt(f, self)?;
         }
 
@@ -639,7 +555,7 @@ impl Display for Program {
     }
 }
 
-impl GlobalVariable {
+impl Variable {
     fn to_string(&self, kind: &str) -> Result<String, fmt::Error> {
         let mut s = String::new();
 
@@ -680,8 +596,35 @@ impl Display for BuiltinVariable {
     }
 }
 
+fn print_function_header(f: &mut Formatter, inp: &[Variable], out: &[Variable]) -> fmt::Result {
+    write!(f, "(")?;
+    if inp.is_empty() {
+        write!(f, ") ")?;
+    } else {
+        writeln!(f, "")?;
+        for input in inp {
+            writeln!(f, "        {},", input.to_string("")?)?;
+        }
+        write!(f, "    ) ")?;
+    }
+
+    if out.len() == 1 {
+        write!(f, "-> {} ", out[0].to_string("")?)?;
+    } else if out.len() > 1 {
+        writeln!(f, "-> (")?;
+        for output in out {
+            writeln!(f, "        {},", output.to_string("")?)?;
+        }
+        write!(f, "    ) ")?;
+    }
+
+    Ok(())
+}
+
 impl Function {
     fn fmt(&self, f: &mut Formatter, prog: &Program) -> fmt::Result {
+        print_function_header(f, &self.inputs, &self.outputs)?;
+
         writeln!(f, "{{")?;
 
         for (id, block) in self.blocks.iter().enumerate() {
@@ -744,33 +687,37 @@ impl Statement {
     }
 }
 
+fn var_display(f: &mut Formatter, prefix: &str, id: usize, var: &Variable) -> fmt::Result {
+    if var.name.is_empty() {
+        write!(f, "{}{}: {}", prefix, id, var.ty)?;
+    } else {
+        let has_whitespace = var.name.chars().any(char::is_whitespace);
+
+        if has_whitespace {
+            write!(f, "{}\"{}\": {}", prefix, var.name, var.ty)?;
+        } else {
+            write!(f, "{}{}: {}", prefix, var.name, var.ty)?;
+        }
+    }
+
+    Ok(())
+}
+
 impl VariableId {
     fn fmt(&self, f: &mut Formatter, prog: &Program, func: &Function) -> fmt::Result {
-        match self {
-            &VariableId::Local(idx) => {
-                let var = &func.variables[idx];
-                if var.name.is_empty() {
-                    write!(f, "%{}: {}", idx, var.ty)?;
-                } else {
-                    let has_whitespace = var.name.chars().any(char::is_whitespace);
-
-                    if has_whitespace {
-                        write!(f, "%\"{}\": {}", var.name, var.ty)?;
-                    } else {
-                        write!(f, "%{}: {}", var.name, var.ty)?;
-                    }
-                }
+        match self.kind {
+            VariableAllocationContext::Local => {
+                var_display(f, "%", self.id, &func.variables[self.id])?;
             }
-            &VariableId::Global(idx, alloc) => match alloc {
-                GlobalAllocationContext::ProgramUniform => {
-                    let var = &prog.uniforms[idx];
-                    write!(f, "${}: {}", var.name, var.ty)?;
-                }
-                GlobalAllocationContext::VertexInput => {}
-                GlobalAllocationContext::VertexOutput => {}
-                GlobalAllocationContext::FragmentInput => {}
-                GlobalAllocationContext::FragmentOutput => {}
-            },
+            VariableAllocationContext::Uniform => {
+                var_display(f, "$", self.id, &prog.uniforms[self.id])?;
+            }
+            VariableAllocationContext::Input => {
+                var_display(f, "$", self.id, &func.inputs[self.id])?;
+            }
+            VariableAllocationContext::Output => {
+                var_display(f, "$", self.id, &func.outputs[self.id])?;
+            }
         }
 
         Ok(())
