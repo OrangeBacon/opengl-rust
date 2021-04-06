@@ -16,7 +16,17 @@ pub enum ShaderCreationError {
     ErrorList { errors: ErrorList },
 
     #[error(transparent)]
-    OtherError { error: anyhow::Error },
+    Other { error: anyhow::Error },
+
+    #[error("Wrong number of arguments passed to {func}: got {got}, expected: {expected}")]
+    ArgumentCount {
+        func: String,
+        got: usize,
+        expected: usize,
+    },
+
+    #[error("Wrong types passed to function {func}: {message}")]
+    ArgumentType { func: String, message: String },
 }
 
 #[derive(Debug)]
@@ -65,12 +75,17 @@ struct FragmentShader {
 #[derive(Debug)]
 struct Function {
     blocks: Vec<Block>,
-    variables: Vec<Variable>,
+    vars: FunctionVars,
+}
+
+#[derive(Debug)]
+struct FunctionVars {
+    locals: Vec<Variable>,
     outputs: Vec<Variable>,
     inputs: Vec<Variable>,
 }
 
-#[context_globals(function => inputs, outputs)]
+#[context_globals(function.vars => inputs, outputs)]
 pub struct FunctionContext<'a, 'b> {
     program: &'a mut ProgramContext,
     function: &'b mut Function,
@@ -123,11 +138,9 @@ pub enum BuiltinFunction {
     Add,
     Div,
     Mul,
-    Rem,
     Sub,
     Texture,
     MakeVec,
-    GetBuiltin,
     SetBuiltin,
     SetGlobal,
     Output,
@@ -162,9 +175,11 @@ struct Variable {
     start_location: Option<usize>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
     Vector(usize),
+
+    /// matrix rows x columns
     Matrix(usize, usize),
     Floating,
     Sampler2D,
@@ -234,55 +249,50 @@ impl ProgramContext {
     pub fn emit_error(&mut self, err: anyhow::Error) {
         self.program
             .errors
-            .push(ShaderCreationError::OtherError { error: err });
+            .push(ShaderCreationError::Other { error: err });
     }
 
     pub fn error(&mut self, err: &str) {
-        self.program.errors.push(ShaderCreationError::OtherError {
+        self.program.errors.push(ShaderCreationError::Other {
             error: anyhow::anyhow!(err.to_string()),
         })
+    }
+
+    fn creation_error(&mut self, err: ShaderCreationError) {
+        self.program.errors.push(err);
+    }
+
+    fn check_arg_count(&mut self, fn_name: &str, args: &[VariableId], max: usize) -> Option<()> {
+        if args.len() != max {
+            self.creation_error(ShaderCreationError::ArgumentCount {
+                func: fn_name.to_string(),
+                got: args.len(),
+                expected: max,
+            });
+            return None;
+        }
+
+        Some(())
     }
 }
 
 impl VertexShader {
     fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut FunctionContext)) -> Self {
-        let mut shader = VertexShader { main: 0 };
-
-        let mut func = Function::new_empty();
-        let mut fn_ctx = FunctionContext {
-            function: &mut func,
-            program: prog,
-        };
-
-        constructor(&mut fn_ctx);
-
-        let fn_id = prog.program.functions.len();
-        shader.main = fn_id;
-
+        let func = Function::new(prog, constructor);
+        let main = prog.program.functions.len();
         prog.program.functions.push(func);
 
-        shader
+        VertexShader { main }
     }
 }
 
 impl FragmentShader {
     fn new(prog: &mut ProgramContext, constructor: impl FnOnce(&mut FunctionContext)) -> Self {
-        let mut shader = FragmentShader { main: 0 };
-
-        let mut func = Function::new_empty();
-        let mut fn_ctx = FunctionContext {
-            function: &mut func,
-            program: prog,
-        };
-
-        constructor(&mut fn_ctx);
-
-        let fn_id = prog.program.functions.len();
-        shader.main = fn_id;
-
+        let func = Function::new(prog, constructor);
+        let main = prog.program.functions.len();
         prog.program.functions.push(func);
 
-        shader
+        FragmentShader { main }
     }
 }
 
@@ -297,6 +307,8 @@ impl Function {
 
         constructor(&mut ctx);
 
+        func.type_check(program);
+
         func
     }
 
@@ -304,15 +316,17 @@ impl Function {
     fn new_empty() -> Self {
         Function {
             blocks: vec![Block { statements: vec![] }],
-            variables: vec![],
-            inputs: vec![],
-            outputs: vec![],
+            vars: FunctionVars {
+                locals: vec![],
+                inputs: vec![],
+                outputs: vec![],
+            },
         }
     }
 
     /// creates an immutable local variable that is unused
     fn local_variable(&mut self, name: &str, ty: Type) -> VariableId {
-        let id = self.variables.len();
+        let id = self.vars.locals.len();
 
         let name = if name.is_empty() {
             String::new()
@@ -320,7 +334,7 @@ impl Function {
             name.to_string()
         };
 
-        self.variables.push(Variable {
+        self.vars.locals.push(Variable {
             name,
             ty,
             start_location: None,
@@ -337,16 +351,16 @@ impl Function {
 
         match var.kind {
             VariableAllocationContext::Local => {
-                self.variables[var.id].name = name;
+                self.vars.locals[var.id].name = name;
             }
             VariableAllocationContext::Uniform => {
                 program.uniforms[var.id].name = name;
             }
             VariableAllocationContext::Input => {
-                self.inputs[var.id].name = name;
+                self.vars.inputs[var.id].name = name;
             }
             VariableAllocationContext::Output => {
-                self.outputs[var.id].name = name;
+                self.vars.outputs[var.id].name = name;
             }
         }
     }
@@ -356,7 +370,11 @@ impl Function {
             &Expression::GetVariable { variable } => variable,
             &Expression::MakeFloat { value } => {
                 let variable = self.local_variable("", Type::Floating);
-                self.set_var_name(program, &format!("f32_{}", self.variables.len()), variable);
+                self.set_var_name(
+                    program,
+                    &format!("f32_{}", self.vars.locals.len() - 1),
+                    variable,
+                );
 
                 self.blocks[0]
                     .statements
@@ -499,7 +517,6 @@ ExpressionOps! {
     Add, add;
     Div, div;
     Mul, mul;
-    Rem, rem;
     Sub, sub;
 }
 
@@ -523,6 +540,305 @@ impl BuiltinVariable {
     fn get_type(&self) -> Type {
         match self {
             &BuiltinVariable::VertexPosition => Type::Vec4,
+        }
+    }
+}
+
+// ------------- //
+// Type checking //
+// ------------- //
+
+impl Function {
+    fn type_check(&mut self, prog: &mut ProgramContext) {
+        if prog.program.errors.is_empty() {
+            for block in &self.blocks {
+                block.type_check(prog, &mut self.vars);
+            }
+        }
+    }
+}
+
+fn get_variable<'a>(
+    variable: VariableId,
+    prog: &'a mut ProgramContext,
+    vars: &'a mut FunctionVars,
+) -> &'a mut Variable {
+    match variable.kind {
+        VariableAllocationContext::Local => &mut vars.locals[variable.id],
+        VariableAllocationContext::Uniform => &mut prog.program.uniforms[variable.id],
+        VariableAllocationContext::Input => &mut vars.inputs[variable.id],
+        VariableAllocationContext::Output => &mut vars.outputs[variable.id],
+    }
+}
+
+impl Block {
+    fn type_check(&self, prog: &mut ProgramContext, vars: &mut FunctionVars) {
+        for statement in &self.statements {
+            match statement {
+                Statement::CallBuiltin {
+                    function,
+                    arguments,
+                    result,
+                } => {
+                    if let (Some(ty), Some(result)) =
+                        (function.type_check(prog, vars, arguments), result)
+                    {
+                        get_variable(*result, prog, vars).ty = ty;
+                    }
+                }
+                Statement::MakeFloat { variable, .. }
+                    if get_variable(*variable, prog, vars).ty == Type::Unknown =>
+                {
+                    get_variable(*variable, prog, vars).ty = Type::Floating;
+                }
+                Statement::MakeBuiltinVariable { variable, result }
+                    if get_variable(*result, prog, vars).ty == Type::Unknown =>
+                {
+                    get_variable(*result, prog, vars).ty = variable.get_type();
+                }
+                _ => (),
+            }
+        }
+    }
+}
+
+impl BuiltinFunction {
+    fn type_check(
+        &self,
+        prog: &mut ProgramContext,
+        vars: &mut FunctionVars,
+        arguments: &[VariableId],
+    ) -> Option<Type> {
+        // don't try to calculate the type if not all the inputs have types
+        if arguments
+            .iter()
+            .any(|&variable| get_variable(variable, prog, vars).ty == Type::Unknown)
+        {
+            return None;
+        }
+
+        match self {
+            BuiltinFunction::Add => Self::type_check_binary(prog, vars, "add", arguments),
+            BuiltinFunction::Div => Self::type_check_binary(prog, vars, "div", arguments),
+            BuiltinFunction::Mul => Self::type_check_mul(prog, vars, arguments),
+            BuiltinFunction::Sub => Self::type_check_binary(prog, vars, "sub", arguments),
+
+            BuiltinFunction::Texture => Self::type_check_texture(prog, vars, arguments),
+            BuiltinFunction::MakeVec => Self::type_check_make_vec(prog, vars, arguments),
+
+            // These functions do not have an output variable
+            BuiltinFunction::SetBuiltin => {
+                Self::type_check_setter("set_builtin", prog, vars, arguments);
+                None
+            }
+            BuiltinFunction::SetGlobal => {
+                Self::type_check_setter("set_global", prog, vars, arguments);
+                None
+            }
+            BuiltinFunction::Output => {
+                Self::type_check_setter("output", prog, vars, arguments);
+                None
+            }
+        }
+    }
+
+    fn type_check_binary(
+        prog: &mut ProgramContext,
+        vars: &mut FunctionVars,
+        fn_name: &str,
+        arguments: &[VariableId],
+    ) -> Option<Type> {
+        prog.check_arg_count(fn_name, arguments, 2)?;
+
+        let arg1_shape = get_variable(arguments[0], prog, vars).ty;
+        let arg1_shape = arg1_shape.get_shape(fn_name, prog)?;
+        let arg2_shape = get_variable(arguments[1], prog, vars).ty;
+        let arg2_shape = arg2_shape.get_shape(fn_name, prog)?;
+
+        if arg1_shape == arg2_shape {
+            return Some(get_variable(arguments[0], prog, vars).ty);
+        }
+
+        match (arg1_shape, arg2_shape) {
+            ((1, 1), (n, m)) | ((n, m), (1, 1)) => {
+                return Some(Type::from_shape(n, m));
+            }
+            _ => {
+                let arg1 = get_variable(arguments[0], prog, vars).ty;
+                let arg2 = get_variable(arguments[1], prog, vars).ty;
+                prog.creation_error(ShaderCreationError::ArgumentType {
+                    func: fn_name.to_string(),
+                    message: format!("Unable to {} values of type {} and {}", fn_name, arg1, arg2),
+                });
+            }
+        }
+
+        None
+    }
+
+    fn type_check_mul(
+        prog: &mut ProgramContext,
+        vars: &mut FunctionVars,
+        arguments: &[VariableId],
+    ) -> Option<Type> {
+        prog.check_arg_count("mul", arguments, 2)?;
+
+        let arg1_shape = get_variable(arguments[0], prog, vars).ty;
+        let arg1_shape = arg1_shape.get_shape("mul", prog)?;
+        let arg2_shape = get_variable(arguments[1], prog, vars).ty;
+        let arg2_shape = arg2_shape.get_shape("mul", prog)?;
+
+        match (arg1_shape, arg2_shape) {
+            // f32 * f32
+            ((1, 1), (1, 1)) => return Some(Type::Floating),
+
+            // f32 * mat or mat * f32
+            ((1, 1), (m, n)) | ((m, n), (1, 1)) => {
+                return Some(Type::from_shape(m, n));
+            }
+
+            // vec * vec elementwise multiplication
+            ((1, n), (1, m)) if n == m => {
+                return Some(Type::from_shape(1, n));
+            }
+
+            // mat * mat
+            _ => (),
+        }
+
+        // get shape treats vectors as row vectors, if on the right hand side of
+        // a matrix multiplication they should be a column vector
+        let arg2_shape = if let (1, n) = arg2_shape {
+            (n, 1)
+        } else {
+            arg2_shape
+        };
+
+        if arg1_shape.1 == arg2_shape.0 {
+            return Some(Type::from_shape(arg1_shape.0, arg2_shape.1));
+        }
+
+        let arg1 = get_variable(arguments[0], prog, vars).ty;
+        let arg2 = get_variable(arguments[1], prog, vars).ty;
+        prog.creation_error(ShaderCreationError::ArgumentType {
+            func: "mul".to_string(),
+            message: format!("Unable to mul values of type {} and {}", arg1, arg2),
+        });
+
+        None
+    }
+
+    fn type_check_texture(
+        prog: &mut ProgramContext,
+        vars: &mut FunctionVars,
+        arguments: &[VariableId],
+    ) -> Option<Type> {
+        prog.check_arg_count("texture", arguments, 2)?;
+
+        let arg1 = get_variable(arguments[0], prog, vars).ty;
+        let arg2 = get_variable(arguments[1], prog, vars).ty;
+
+        if arg1 != Type::Sampler2D && arg2 != Type::Vec2 {
+            prog.creation_error(ShaderCreationError::ArgumentType {
+                func: "texture".to_string(),
+                message: format!(
+                    "The texture function currently only supports (Sampler2D, vec2), got {}, {}",
+                    arg1, arg2
+                ),
+            });
+
+            None
+        } else {
+            Some(Type::Vec4)
+        }
+    }
+
+    fn type_check_make_vec(
+        prog: &mut ProgramContext,
+        vars: &mut FunctionVars,
+        arguments: &[VariableId],
+    ) -> Option<Type> {
+        let shapes = arguments
+            .iter()
+            .map(|&arg| {
+                let shape = get_variable(arg, prog, vars).ty;
+                shape.get_shape("make_vec", prog)
+            })
+            .collect::<Option<Vec<_>>>()?;
+
+        let mut size = 0;
+        let mut has_error = false;
+
+        for arg in shapes {
+            if arg.0 != 1 {
+                has_error = true;
+                prog.creation_error(ShaderCreationError::ArgumentType {
+                    func: "make_vec".to_string(),
+                    message: format!(
+                        "Cannot make vector from variable of type {}",
+                        Type::from_shape(arg.0, arg.1)
+                    ),
+                });
+            }
+
+            size += arg.1;
+        }
+
+        if has_error {
+            None
+        } else {
+            Some(Type::Vector(size))
+        }
+    }
+
+    fn type_check_setter(
+        fn_name: &str,
+        prog: &mut ProgramContext,
+        vars: &mut FunctionVars,
+        arguments: &[VariableId],
+    ) {
+        if prog.check_arg_count(fn_name, arguments, 2) == None {
+            return;
+        }
+
+        let arg1 = get_variable(arguments[0], prog, vars).ty;
+        let arg2 = get_variable(arguments[1], prog, vars).ty;
+
+        if arg1 != arg2 {
+            prog.creation_error(ShaderCreationError::ArgumentType {
+                func: fn_name.to_string(),
+                message: format!(
+                    "Trying to set variable of type {} to value of type {}",
+                    arg1, arg2
+                ),
+            })
+        }
+    }
+}
+
+impl Type {
+    /// returns (rows, cols)
+    fn get_shape(&self, fn_name: &str, prog: &mut ProgramContext) -> Option<(usize, usize)> {
+        match self {
+            Type::Vector(cols) => Some((1, *cols)),
+            Type::Matrix(rows, cols) => Some((*rows, *cols)),
+            Type::Floating => Some((1, 1)),
+            ty @ (Type::Sampler2D | Type::Unknown) => {
+                prog.creation_error(ShaderCreationError::ArgumentType {
+                    func: fn_name.to_string(),
+                    message: format!("Expected numeric type such as matrix or scalar, got {}", ty),
+                });
+                None
+            }
+        }
+    }
+
+    fn from_shape(rows: usize, cols: usize) -> Type {
+        match (rows, cols) {
+            (1, 1) => Type::Floating,
+            (1, cols) => Type::Vector(cols),
+            (rows, 1) => Type::Vector(rows),
+            (rows, cols) => Type::Matrix(rows, cols),
         }
     }
 }
@@ -623,7 +939,7 @@ fn print_function_header(f: &mut Formatter, inp: &[Variable], out: &[Variable]) 
 
 impl Function {
     fn fmt(&self, f: &mut Formatter, prog: &Program) -> fmt::Result {
-        print_function_header(f, &self.inputs, &self.outputs)?;
+        print_function_header(f, &self.vars.inputs, &self.vars.outputs)?;
 
         writeln!(f, "{{")?;
 
@@ -650,6 +966,44 @@ impl Block {
     }
 }
 
+fn fn_display(
+    f: &mut Formatter,
+    func: &Function,
+    prog: &Program,
+    builtin: BuiltinFunction,
+    arguments: &[VariableId],
+) -> fmt::Result {
+    let operator = match builtin {
+        BuiltinFunction::Add => Some("+"),
+        BuiltinFunction::Div => Some("/"),
+        BuiltinFunction::Mul => Some("*"),
+        BuiltinFunction::Sub => Some("-"),
+        _ => None,
+    };
+
+    if arguments.len() == 2 {
+        if let Some(op) = operator {
+            arguments[0].fmt(f, prog, func)?;
+            write!(f, " {} ", op)?;
+            arguments[1].fmt(f, prog, func)?;
+
+            return Ok(());
+        }
+    }
+
+    write!(f, "{:?} ", builtin)?;
+
+    for (idx, arg) in arguments.iter().enumerate() {
+        if idx > 0 {
+            write!(f, ", ")?;
+        }
+
+        arg.fmt(f, prog, func)?;
+    }
+
+    Ok(())
+}
+
 impl Statement {
     fn fmt(&self, f: &mut Formatter, prog: &Program, func: &Function) -> fmt::Result {
         match self {
@@ -663,15 +1017,7 @@ impl Statement {
                     write!(f, " = ")?;
                 }
 
-                write!(f, "{:?} ", function)?;
-
-                for (idx, arg) in arguments.iter().enumerate() {
-                    if idx > 0 {
-                        write!(f, ", ")?;
-                    }
-
-                    arg.fmt(f, prog, func)?;
-                }
+                fn_display(f, func, prog, function, &arguments)?;
             }
             &Statement::MakeBuiltinVariable { variable, result } => {
                 result.fmt(f, prog, func)?;
@@ -707,16 +1053,16 @@ impl VariableId {
     fn fmt(&self, f: &mut Formatter, prog: &Program, func: &Function) -> fmt::Result {
         match self.kind {
             VariableAllocationContext::Local => {
-                var_display(f, "%", self.id, &func.variables[self.id])?;
+                var_display(f, "%", self.id, &func.vars.locals[self.id])?;
             }
             VariableAllocationContext::Uniform => {
                 var_display(f, "$", self.id, &prog.uniforms[self.id])?;
             }
             VariableAllocationContext::Input => {
-                var_display(f, "$", self.id, &func.inputs[self.id])?;
+                var_display(f, "$", self.id, &func.vars.inputs[self.id])?;
             }
             VariableAllocationContext::Output => {
-                var_display(f, "$", self.id, &func.outputs[self.id])?;
+                var_display(f, "$", self.id, &func.vars.outputs[self.id])?;
             }
         }
 

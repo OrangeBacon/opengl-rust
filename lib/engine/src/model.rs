@@ -1254,7 +1254,10 @@ impl GPUPrimitive {
                 if let Some(output) = output {
                     ctx.set_global(output_global, output);
                 } else {
-                    ctx.error("Model fragment shader created without colour output");
+                    ctx.set_global(
+                        output_global,
+                        Expression::vec(&[0.5.into(), 0.5.into(), 0.5.into(), 1.0.into()]),
+                    )
                 }
             })
         });
@@ -1313,7 +1316,7 @@ impl Attribute {
                 let projection = ctx.uniform("projection", Type::Mat4);
                 let position = ctx.input_loc("Position", Type::Vec3, self.location);
 
-                let value = view * model * projection * Expression::vec(&[position, 1.0.into()]);
+                let value = projection * view * model * Expression::vec(&[position, 1.0.into()]);
 
                 ctx.set_builtin(BuiltinVariable::VertexPosition, value)
             }
@@ -1346,8 +1349,23 @@ impl Attribute {
         model: &Model,
     ) -> Option<Expression> {
         match self.kind {
+            AttributeType::Color(idx) => {
+                let ty =
+                    if model.gltf.accessors[self.accessor_idx].r#type == gltf::AccessorType::Vec3 {
+                        Type::Vec3
+                    } else {
+                        Type::Vec4
+                    };
+
+                let color = ctx.input_loc(&format!("Color{}", idx), ty.clone(), self.location);
+
+                Some(color)
+            }
             AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
-                Some(ctx.uniform("base_color", Type::Sampler2D))
+                let base_color = ctx.uniform("base_color", Type::Sampler2D);
+                let uv = ctx.input_loc(&format!("TexCoord{}", idx), Type::Vec2, self.location);
+
+                Some(Expression::texture(base_color, uv))
             }
             _ => None,
         }
