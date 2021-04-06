@@ -1237,7 +1237,7 @@ impl GPUPrimitive {
         let mut shader = Program::new(|ctx| {
             ctx.vertex(|ctx| {
                 for comp in &components {
-                    comp.vertex(ctx);
+                    comp.vertex(ctx, prim, model);
                 }
             });
 
@@ -1262,7 +1262,7 @@ impl GPUPrimitive {
             .ok()
             .map_err(|e| ModelError::ShaderCompilation { source: e })?;
 
-        println!("{:#?}", shader);
+        println!("{}", shader);
 
         Ok(())
     }
@@ -1304,7 +1304,7 @@ impl AttributeType {
 }
 
 impl Attribute {
-    fn vertex(&self, ctx: &mut VertexContext) {
+    fn vertex(&self, ctx: &mut VertexContext, prim: &gltf::Primitive, model: &Model) {
         match self.kind {
             AttributeType::Position => {
                 let view = ctx.uniform("view", Type::Mat4);
@@ -1315,6 +1315,24 @@ impl Attribute {
                 let value = view * model * projection * Expression::vec(&[position, 1.0.into()]);
 
                 ctx.set_builtin(BuiltinVariable::VertexPosition, value)
+            }
+            AttributeType::Color(idx) => {
+                let ty =
+                    if model.gltf.accessors[self.accessor_idx].r#type == gltf::AccessorType::Vec3 {
+                        Type::Vec3
+                    } else {
+                        Type::Vec4
+                    };
+
+                let color = ctx.input_loc(&format!("Color{}", idx), ty.clone(), self.location);
+                let output = ctx.output_loc(&format!("Color{}_out", idx), ty, self.location);
+                ctx.set_output(output, color);
+            }
+            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
+                let coord = ctx.input_loc(&format!("TexCoord{}", idx), Type::Vec2, self.location);
+                let output =
+                    ctx.output_loc(&format!("TexCoord{}_out", idx), Type::Vec2, self.location);
+                ctx.set_output(output, coord);
             }
             _ => (),
         }

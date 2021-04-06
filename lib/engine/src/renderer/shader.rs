@@ -1,5 +1,5 @@
 use std::{
-    fmt,
+    fmt::{self, Display, Formatter, Write},
     ops::{Deref, DerefMut},
 };
 
@@ -146,6 +146,7 @@ pub enum BuiltinFunction {
     GetBuiltin,
     SetBuiltin,
     SetGlobal,
+    Output,
 }
 
 /// Variables automagically provided by a shader without having to declare them
@@ -482,6 +483,24 @@ impl<'a, 'b> FunctionContext<'a, 'b> {
                 result: None,
             })
     }
+
+    pub fn set_output(&mut self, target: Expression, value: Expression) {
+        let target = self
+            .function
+            .expr_to_variable(&mut self.program.program, &target);
+
+        let value = self
+            .function
+            .expr_to_variable(&mut self.program.program, &value);
+
+        self.function.blocks[0]
+            .statements
+            .push(Statement::CallBuiltin {
+                function: BuiltinFunction::Output,
+                arguments: vec![target, value],
+                result: None,
+            })
+    }
 }
 
 impl<'a, 'b> Deref for FunctionContext<'a, 'b> {
@@ -561,10 +580,199 @@ impl BuiltinVariable {
     }
 }
 
-impl fmt::Display for BuiltinVariable {
+// ----------------------- //
+// Display Implementations //
+// ----------------------- //
+
+fn print_function_header(
+    f: &mut Formatter,
+    inp: &[GlobalVariable],
+    out: &[GlobalVariable],
+) -> fmt::Result {
+    write!(f, "(")?;
+    if inp.is_empty() {
+        write!(f, ") ")?;
+    } else {
+        writeln!(f, "")?;
+        for input in inp {
+            writeln!(f, "        {},", input.to_string("")?)?;
+        }
+        write!(f, "    ) ")?;
+    }
+
+    if out.len() == 1 {
+        write!(f, "-> {} ", out[0].to_string("")?)?;
+    } else if out.len() > 1 {
+        writeln!(f, "-> (")?;
+        for output in out {
+            writeln!(f, "        {},", output.to_string("")?)?;
+        }
+        write!(f, "    ) ")?;
+    }
+
+    Ok(())
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        writeln!(f, "Program {{")?;
+
+        for uniform in &self.uniforms {
+            writeln!(f, "    {};", uniform.to_string("uniform ")?)?;
+        }
+
+        if let Some(vertex) = &self.vertex {
+            write!(f, "\n    vertex main")?;
+            print_function_header(f, &vertex.inputs, &vertex.outputs)?;
+            self.functions[vertex.main].fmt(f, self)?;
+        }
+
+        if let Some(frag) = &self.frag {
+            write!(f, "\n    fragment main")?;
+            print_function_header(f, &frag.inputs, &frag.outputs)?;
+            self.functions[frag.main].fmt(f, self)?;
+        }
+
+        writeln!(f, "}}")?;
+
+        Ok(())
+    }
+}
+
+impl GlobalVariable {
+    fn to_string(&self, kind: &str) -> Result<String, fmt::Error> {
+        let mut s = String::new();
+
+        if let Some(loc) = self.start_location {
+            write!(s, "layout(location = {}) ", loc)?;
+        };
+
+        write!(s, "{}${}: {}", kind, self.name, self.ty)?;
+
+        Ok(s)
+    }
+}
+
+impl Display for Type {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match *self {
+            Type::Floating => write!(f, "f32"),
+            Type::Sampler2D => write!(f, "sampler2D"),
+            Type::Unknown => write!(f, "null_type"),
+
+            Type::Vector(n) => write!(f, "vec{}", n),
+            Type::Matrix(n, m) => {
+                if n == m {
+                    write!(f, "mat{}", n)
+                } else {
+                    write!(f, "mat{}x{}", n, m)
+                }
+            }
+        }
+    }
+}
+
+impl Display for BuiltinVariable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &BuiltinVariable::VertexPosition => write!(f, "gl_Position"),
         }
+    }
+}
+
+impl Function {
+    fn fmt(&self, f: &mut Formatter, prog: &Program) -> fmt::Result {
+        writeln!(f, "{{")?;
+
+        for (id, block) in self.blocks.iter().enumerate() {
+            writeln!(f, "        @{}:", id)?;
+            block.fmt(f, prog, self)?;
+        }
+
+        writeln!(f, "    }}")?;
+
+        Ok(())
+    }
+}
+
+impl Block {
+    fn fmt(&self, f: &mut Formatter, prog: &Program, func: &Function) -> fmt::Result {
+        for statement in &self.statements {
+            write!(f, "          ")?;
+            statement.fmt(f, prog, func)?;
+            writeln!(f, "")?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Statement {
+    fn fmt(&self, f: &mut Formatter, prog: &Program, func: &Function) -> fmt::Result {
+        match self {
+            &Statement::CallBuiltin {
+                function,
+                ref arguments,
+                result,
+            } => {
+                if let Some(res) = result {
+                    res.fmt(f, prog, func)?;
+                    write!(f, " = ")?;
+                }
+
+                write!(f, "{:?} ", function)?;
+
+                for (idx, arg) in arguments.iter().enumerate() {
+                    if idx > 0 {
+                        write!(f, ", ")?;
+                    }
+
+                    arg.fmt(f, prog, func)?;
+                }
+            }
+            &Statement::MakeBuiltinVariable { variable, result } => {
+                result.fmt(f, prog, func)?;
+                write!(f, " = &{};", variable)?;
+            }
+            &Statement::MakeFloat { value, variable } => {
+                variable.fmt(f, prog, func)?;
+                write!(f, " = {};", value)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl VariableId {
+    fn fmt(&self, f: &mut Formatter, prog: &Program, func: &Function) -> fmt::Result {
+        match self {
+            &VariableId::Local(idx) => {
+                let var = &func.variables[idx];
+                if var.name.is_empty() {
+                    write!(f, "%{}: {}", idx, var.ty)?;
+                } else {
+                    let has_whitespace = var.name.chars().any(char::is_whitespace);
+
+                    if has_whitespace {
+                        write!(f, "%\"{}\": {}", var.name, var.ty)?;
+                    } else {
+                        write!(f, "%{}: {}", var.name, var.ty)?;
+                    }
+                }
+            }
+            &VariableId::Global(idx, alloc) => match alloc {
+                GlobalAllocationContext::ProgramUniform => {
+                    let var = &prog.uniforms[idx];
+                    write!(f, "${}: {}", var.name, var.ty)?;
+                }
+                GlobalAllocationContext::VertexInput => {}
+                GlobalAllocationContext::VertexOutput => {}
+                GlobalAllocationContext::FragmentInput => {}
+                GlobalAllocationContext::FragmentOutput => {}
+            },
+        }
+
+        Ok(())
     }
 }
