@@ -12,8 +12,8 @@ use crate::{
 };
 
 use super::{
-    backend::RendererBackend, AttributeType, DrawingMode, IdType, IndexBufferId, IndexType,
-    Pipeline, PipelineId, TextureId, VertexBufferId,
+    backend::RendererBackend, shader::Program, AttributeType, DrawingMode, IdType, IndexBufferId,
+    IndexType, Pipeline, PipelineId, TextureId, VertexBufferId,
 };
 
 #[derive(Debug, Error)]
@@ -321,6 +321,10 @@ impl RendererBackend for GlRenderer {
                 .DrawElements(mode, count as _, index_type, index_offset as _);
         }
     }
+
+    fn program(&self, program: Program) -> Result<()> {
+        program.to_glsl()
+    }
 }
 
 struct GlPipeline {
@@ -330,7 +334,7 @@ struct GlPipeline {
 }
 
 impl GlPipeline {
-    fn new(pipeline: Pipeline, gl: gl::Gl) -> Result<Self, GlError> {
+    fn new(pipeline: Pipeline, gl: gl::Gl) -> Result<Self> {
         let shaders = vec![
             (pipeline.vertex_shader, gl::VERTEX_SHADER),
             (pipeline.fragment_shader, gl::FRAGMENT_SHADER),

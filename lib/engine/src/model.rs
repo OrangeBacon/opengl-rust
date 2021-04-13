@@ -109,6 +109,9 @@ pub enum ModelError {
 
     #[error("Shader compilation error while loading model:\n{source}")]
     ShaderCompilation { source: ShaderCreationError },
+
+    #[error("Unable to convert shader to native type:\n{source}")]
+    NativeShader { source: anyhow::Error },
 }
 
 /// A 3d gltf model, including all its data.  Not dependant upon any rendering
@@ -1136,7 +1139,9 @@ impl GPUPrimitive {
         let (vertex_buffers, vertex_offsets, vertex_strides) =
             Self::get_vertex_array_data(prim, model)?;
 
-        Self::create_shader_test(prim, model)?;
+        renderer
+            .program(Self::create_shader_test(prim, model)?)
+            .map_err(|e| ModelError::NativeShader { source: e })?;
 
         Ok(Self {
             pipeline,
@@ -1220,7 +1225,7 @@ impl GPUPrimitive {
         Ok(())
     }
 
-    fn create_shader_test(prim: &gltf::Primitive, model: &Model) -> Result<(), ModelError> {
+    fn create_shader_test(prim: &gltf::Primitive, model: &Model) -> Result<Program, ModelError> {
         let components: Vec<Attribute> = prim
             .attributes
             .iter()
@@ -1266,9 +1271,7 @@ impl GPUPrimitive {
             .ok()
             .map_err(|e| ModelError::ShaderCompilation { source: e })?;
 
-        println!("{}", shader);
-
-        Ok(())
+        Ok(shader)
     }
 }
 

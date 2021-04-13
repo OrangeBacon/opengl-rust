@@ -27,6 +27,9 @@ pub enum ShaderCreationError {
 
     #[error("Wrong types passed to function {func}: {message}")]
     ArgumentType { func: String, message: String },
+
+    #[error("Variable cannot have location applied: {name}")]
+    VariableLocation { name: String },
 }
 
 #[derive(Debug)]
@@ -73,7 +76,7 @@ struct FragmentShader {
 /// A single function in a shader program, either a shader main function or
 /// a utility function
 #[derive(Debug)]
-struct Function {
+pub struct Function {
     blocks: Vec<Block>,
     vars: FunctionVars,
 }
@@ -94,7 +97,7 @@ pub struct FunctionContext<'a, 'b> {
 /// An ssa basic block, contains no control flow, all jumps will be at the end
 /// of the block, all entry will be at the start of the block
 #[derive(Debug)]
-struct Block {
+pub struct Block {
     statements: Vec<Statement>,
 }
 
@@ -116,7 +119,7 @@ pub enum Expression {
 
 /// A single operation in ssa form
 #[derive(Debug, Clone)]
-enum Statement {
+pub enum Statement {
     CallBuiltin {
         function: BuiltinFunction,
         arguments: Vec<VariableId>,
@@ -152,14 +155,12 @@ pub enum BuiltinVariable {
     VertexPosition,
 }
 
-#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct VariableId {
     id: usize,
     kind: VariableAllocationContext,
 }
 
-#[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VariableAllocationContext {
     Local,
@@ -169,10 +170,10 @@ pub enum VariableAllocationContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Variable {
-    name: String,
-    ty: Type,
-    start_location: Option<usize>,
+pub struct Variable {
+    pub name: String,
+    pub ty: Type,
+    pub start_location: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,6 +213,7 @@ impl Program {
 
         constructor(&mut ctx);
 
+        ctx.program.check_params();
         ctx.program
     }
 
@@ -223,6 +225,56 @@ impl Program {
         } else {
             Ok(())
         }
+    }
+
+    /// Get a list of all functions included in a shader
+    pub fn functions(&self) -> &[Function] {
+        &self.functions
+    }
+
+    /// Get the vertex shader main function
+    pub fn vertex_main(&self) -> Option<&Function> {
+        if let Some(vert) = &self.vertex {
+            Some(&self.functions[vert.main])
+        } else {
+            None
+        }
+    }
+
+    /// Get the fragment shader main function
+    pub fn frag_main(&self) -> Option<&Function> {
+        if let Some(frag) = &self.frag {
+            Some(&self.functions[frag.main])
+        } else {
+            None
+        }
+    }
+
+    /// Get the vertex shader main function
+    pub fn vertex_mut(&mut self) -> Option<&mut Function> {
+        if let Some(vert) = &self.vertex {
+            Some(&mut self.functions[vert.main])
+        } else {
+            None
+        }
+    }
+
+    /// Get the fragment shader main function
+    pub fn frag_mut(&mut self) -> Option<&mut Function> {
+        if let Some(frag) = &self.frag {
+            Some(&mut self.functions[frag.main])
+        } else {
+            None
+        }
+    }
+
+    /// Get a list of all the uniform variables in the program
+    pub fn uniforms(&self) -> &[Variable] {
+        &self.uniforms
+    }
+
+    pub fn uniforms_mut(&mut self) -> &mut [Variable] {
+        &mut self.uniforms
     }
 }
 
@@ -405,6 +457,44 @@ impl Function {
     }
 }
 
+impl Function {
+    pub fn blocks(&self) -> &[Block] {
+        &self.blocks
+    }
+
+    pub fn all_vars(&self) -> impl Iterator<Item = &Variable> {
+        self.vars
+            .inputs
+            .iter()
+            .chain(self.vars.outputs.iter())
+            .chain(self.vars.locals.iter())
+    }
+
+    pub fn inputs(&self) -> &[Variable] {
+        &self.vars.inputs
+    }
+
+    pub fn outputs(&self) -> &[Variable] {
+        &self.vars.outputs
+    }
+
+    pub fn locals(&self) -> &[Variable] {
+        &self.vars.locals
+    }
+
+    pub fn inputs_mut(&mut self) -> &mut [Variable] {
+        &mut self.vars.inputs
+    }
+
+    pub fn outputs_mut(&mut self) -> &mut [Variable] {
+        &mut self.vars.outputs
+    }
+
+    pub fn locals_mut(&mut self) -> &mut [Variable] {
+        &mut self.vars.locals
+    }
+}
+
 impl<'a, 'b> FunctionContext<'a, 'b> {
     pub fn set_global(&mut self, global: Expression, value: Expression) {
         let global = self
@@ -482,6 +572,13 @@ impl<'a, 'b> DerefMut for FunctionContext<'a, 'b> {
     }
 }
 
+impl Block {
+    /// Get all the statements in a block
+    pub fn statements(&self) -> &[Statement] {
+        &self.statements
+    }
+}
+
 impl From<f32> for Expression {
     fn from(value: f32) -> Self {
         Expression::MakeFloat { value }
@@ -541,6 +638,16 @@ impl BuiltinVariable {
         match self {
             &BuiltinVariable::VertexPosition => Type::Vec4,
         }
+    }
+}
+
+impl VariableId {
+    pub fn allocation_kind(&self) -> VariableAllocationContext {
+        self.kind
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
     }
 }
 
@@ -839,6 +946,34 @@ impl Type {
             (1, cols) => Type::Vector(cols),
             (rows, 1) => Type::Vector(rows),
             (rows, cols) => Type::Matrix(rows, cols),
+        }
+    }
+}
+
+impl Program {
+    /// check that functions do not have layout locations specified unless
+    /// they are main functions of a shader
+    fn check_params(&mut self) {
+        let mut main = vec![];
+        if let Some(vert) = &self.vertex {
+            main.push(vert.main);
+        }
+        if let Some(frag) = &self.frag {
+            main.push(frag.main);
+        }
+
+        for (idx, func) in self.functions.iter().enumerate() {
+            if main.contains(&idx) {
+                continue;
+            }
+
+            for var in func.all_vars() {
+                if var.start_location != None {
+                    self.errors.push(ShaderCreationError::VariableLocation {
+                        name: var.name.clone(),
+                    })
+                }
+            }
         }
     }
 }

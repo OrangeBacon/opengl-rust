@@ -2,7 +2,8 @@ use anyhow::Result;
 use nalgebra_glm as glm;
 
 use super::{
-    DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, TextureId, VertexBufferId,
+    shader::Program, DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, TextureId,
+    VertexBufferId,
 };
 use crate::texture::Texture;
 
@@ -81,4 +82,7 @@ pub trait RendererBackend {
         index_offset: usize,
         count: usize,
     );
+
+    /// try printing a shader program in a backend specific way lol e.g. glsl formatter
+    fn program(&self, program: Program) -> Result<()>;
 }

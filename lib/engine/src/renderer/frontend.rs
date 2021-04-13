@@ -1,7 +1,7 @@
 use anyhow::Result;
 use nalgebra_glm as glm;
 
-use super::backend::RendererBackend;
+use super::{backend::RendererBackend, shader::Program};
 use crate::texture::Texture;
 
 /// type inside all *Id tuple structs
@@ -98,6 +98,10 @@ impl Renderer {
     #[inline(always)]
     pub fn bind_pipeline(&mut self, pipeline: PipelineId) -> BoundPipeline {
         BoundPipeline::new(self, pipeline)
+    }
+
+    pub fn program(&mut self, program: Program) -> Result<()> {
+        self.backend.program(program)
     }
 }
 
