@@ -1,5 +1,6 @@
 use super::shader::{
-    Block, Function, Program, Statement, Type, Variable, VariableAllocationContext,
+    Block, BuiltinFunction, Function, Program, Statement, Type, Variable,
+    VariableAllocationContext, VariableId,
 };
 use thiserror::Error;
 
@@ -126,6 +127,10 @@ impl Program {
             vert.outputs().into_iter(),
             &Self::calc_variable_locations(vert.outputs())?,
         )?;
+
+        shader.push_str("void main() {\n");
+        write_func(&mut shader, self, vert);
+        shader.push_str("}\n");
 
         Ok(shader)
     }
@@ -260,4 +265,121 @@ fn global_output_loc<'a>(
     }
 
     Ok(())
+}
+
+fn write_func(shader: &mut String, prog: &Program, func: &Function) {
+    for block in func.blocks() {
+        for statement in block.statements() {
+            match statement {
+                Statement::CallBuiltin {
+                    function,
+                    arguments,
+                    result,
+                } => {
+                    write_builtin_call(shader, prog, func, function, arguments, result);
+                }
+                Statement::MakeFloat { value, variable } => {
+                    write_variable_new(shader, prog, func, *variable);
+                    shader.push_str(" = ");
+                    shader.push_str(&format!("{:.20}", value));
+                    shader.push_str(";\n");
+                }
+                Statement::SetBuiltinVariable { variable, value } => {
+                    shader.push_str("    ");
+                    shader.push_str(&variable.to_string());
+                    shader.push_str(" = ");
+                    write_variable_get(shader, prog, func, *value);
+                    shader.push_str(";\n");
+                }
+                Statement::GetBuiltinVariable { variable, result } => {
+                    write_variable_new(shader, prog, func, *result);
+                    shader.push_str(" = ");
+                    shader.push_str(&variable.to_string());
+                    shader.push_str(";\n");
+                }
+            }
+        }
+    }
+}
+
+fn write_variable_new(shader: &mut String, prog: &Program, func: &Function, variable: VariableId) {
+    shader.push_str("    ");
+
+    let variable_ref = prog.get_variable(func, variable);
+    shader.push_str(&variable_ref.ty.to_glsl());
+    shader.push_str(" ");
+    write_variable_name(shader, variable_ref, variable.id());
+}
+
+fn write_variable_get(shader: &mut String, prog: &Program, func: &Function, variable: VariableId) {
+    write_variable_name(shader, prog.get_variable(func, variable), variable.id());
+}
+
+fn write_variable_name(shader: &mut String, var: &Variable, id: usize) {
+    if var.name.is_empty() {
+        shader.push_str(&format!("var_{}", id));
+    } else {
+        shader.push_str(&var.name);
+    }
+}
+
+fn write_builtin_call(
+    shader: &mut String,
+    prog: &Program,
+    func: &Function,
+    function: &BuiltinFunction,
+    arguments: &[VariableId],
+    result: &Option<VariableId>,
+) {
+    if let Some(result) = result {
+        write_variable_new(shader, prog, func, *result);
+        shader.push_str(" = ");
+    } else {
+        shader.push_str("    ");
+    }
+
+    if let Some(op) = match function {
+        BuiltinFunction::Add => Some("+"),
+        BuiltinFunction::Div => Some("/"),
+        BuiltinFunction::Mul => Some("*"),
+        BuiltinFunction::Sub => Some("-"),
+        _ => None,
+    } {
+        write_variable_get(shader, prog, func, arguments[0]);
+        shader.push_str(&format!(" {} ", op));
+        write_variable_get(shader, prog, func, arguments[1]);
+        shader.push_str(";\n");
+        return;
+    }
+
+    match function {
+        BuiltinFunction::Texture => {
+            shader.push_str("texture(");
+            write_variable_get(shader, prog, func, arguments[0]);
+            shader.push_str(", ");
+            write_variable_get(shader, prog, func, arguments[1]);
+            shader.push_str(");\n");
+        }
+        BuiltinFunction::SetGlobal => {
+            write_variable_get(shader, prog, func, arguments[0]);
+            shader.push_str(" = ");
+            write_variable_get(shader, prog, func, arguments[1]);
+            shader.push_str(";\n");
+        }
+        BuiltinFunction::MakeVec => {
+            if let Some(result) = result {
+                let result = prog.get_variable(func, *result);
+
+                shader.push_str(&format!("{}(", result.ty));
+                for (i, arg) in arguments.iter().enumerate() {
+                    if i > 0 {
+                        shader.push_str(", ");
+                    }
+                    write_variable_get(shader, prog, func, *arg);
+                }
+                shader.push_str(");\n");
+            }
+        }
+        _ => (),
+    }
 }

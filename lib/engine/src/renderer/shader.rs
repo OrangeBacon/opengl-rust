@@ -129,7 +129,11 @@ pub enum Statement {
         value: f32,
         variable: VariableId,
     },
-    MakeBuiltinVariable {
+    SetBuiltinVariable {
+        variable: BuiltinVariable,
+        value: VariableId,
+    },
+    GetBuiltinVariable {
         variable: BuiltinVariable,
         result: VariableId,
     },
@@ -144,9 +148,7 @@ pub enum BuiltinFunction {
     Sub,
     Texture,
     MakeVec,
-    SetBuiltin,
     SetGlobal,
-    Output,
 }
 
 /// Variables automagically provided by a shader without having to declare them
@@ -275,6 +277,15 @@ impl Program {
 
     pub fn uniforms_mut(&mut self) -> &mut [Variable] {
         &mut self.uniforms
+    }
+
+    pub fn get_variable<'a>(&'a self, func: &'a Function, variable: VariableId) -> &'a Variable {
+        match variable.kind {
+            VariableAllocationContext::Local => &func.vars.locals[variable.id],
+            VariableAllocationContext::Uniform => &self.uniforms[variable.id],
+            VariableAllocationContext::Input => &func.vars.inputs[variable.id],
+            VariableAllocationContext::Output => &func.vars.outputs[variable.id],
+        }
     }
 }
 
@@ -515,27 +526,15 @@ impl<'a, 'b> FunctionContext<'a, 'b> {
     }
 
     pub fn set_builtin(&mut self, builtin: BuiltinVariable, value: Expression) {
-        let builtin_var = self
-            .function
-            .local_variable(&builtin.to_string(), builtin.get_type());
-
-        self.function.blocks[0]
-            .statements
-            .push(Statement::MakeBuiltinVariable {
-                variable: builtin,
-                result: builtin_var,
-            });
-
         let value = self
             .function
             .expr_to_variable(&mut self.program.program, &value);
 
         self.function.blocks[0]
             .statements
-            .push(Statement::CallBuiltin {
-                function: BuiltinFunction::SetBuiltin,
-                arguments: vec![builtin_var, value],
-                result: None,
+            .push(Statement::SetBuiltinVariable {
+                variable: builtin,
+                value,
             })
     }
 
@@ -551,7 +550,7 @@ impl<'a, 'b> FunctionContext<'a, 'b> {
         self.function.blocks[0]
             .statements
             .push(Statement::CallBuiltin {
-                function: BuiltinFunction::Output,
+                function: BuiltinFunction::SetGlobal,
                 arguments: vec![target, value],
                 result: None,
             })
@@ -698,7 +697,7 @@ impl Block {
                 {
                     get_variable(*variable, prog, vars).ty = Type::Floating;
                 }
-                Statement::MakeBuiltinVariable { variable, result }
+                Statement::GetBuiltinVariable { variable, result }
                     if get_variable(*result, prog, vars).ty == Type::Unknown =>
                 {
                     get_variable(*result, prog, vars).ty = variable.get_type();
@@ -734,16 +733,8 @@ impl BuiltinFunction {
             BuiltinFunction::MakeVec => Self::type_check_make_vec(prog, vars, arguments),
 
             // These functions do not have an output variable
-            BuiltinFunction::SetBuiltin => {
-                Self::type_check_setter("set_builtin", prog, vars, arguments);
-                None
-            }
             BuiltinFunction::SetGlobal => {
                 Self::type_check_setter("set_global", prog, vars, arguments);
-                None
-            }
-            BuiltinFunction::Output => {
-                Self::type_check_setter("output", prog, vars, arguments);
                 None
             }
         }
@@ -1154,13 +1145,17 @@ impl Statement {
 
                 fn_display(f, func, prog, function, &arguments)?;
             }
-            &Statement::MakeBuiltinVariable { variable, result } => {
-                result.fmt(f, prog, func)?;
-                write!(f, " = &{};", variable)?;
-            }
             &Statement::MakeFloat { value, variable } => {
                 variable.fmt(f, prog, func)?;
                 write!(f, " = {};", value)?;
+            }
+            &Statement::GetBuiltinVariable { variable, result } => {
+                result.fmt(f, prog, func)?;
+                write!(f, " = {};", variable)?;
+            }
+            &Self::SetBuiltinVariable { value, variable } => {
+                write!(f, "{} = ", variable)?;
+                value.fmt(f, prog, func)?;
             }
         }
 
