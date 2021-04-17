@@ -26,7 +26,7 @@ impl Program {
             println!("{}", vert);
         }
 
-        if let Some(frag) = self.frag_shader() {
+        if let Ok(frag) = self.frag_shader() {
             println!("{}", frag);
         }
 
@@ -106,37 +106,23 @@ impl Program {
     }
 
     fn vert_shader(&mut self) -> Result<String, GlslError> {
-        let vert = if let Some(vert) = self.vertex_main() {
+        let shader = if let Some(vert) = self.vertex_main() {
             vert
         } else {
             return Ok(String::new());
         };
 
-        let mut shader = String::new();
-
-        global_output(&mut shader, "uniform", self.used_uniforms(vert).into_iter())?;
-        global_output_loc(
-            &mut shader,
-            "in",
-            vert.inputs().into_iter(),
-            &Self::calc_variable_locations(vert.inputs())?,
-        )?;
-        global_output_loc(
-            &mut shader,
-            "out",
-            vert.outputs().into_iter(),
-            &Self::calc_variable_locations(vert.outputs())?,
-        )?;
-
-        shader.push_str("void main() {\n");
-        write_func(&mut shader, self, vert);
-        shader.push_str("}\n");
-
-        Ok(shader)
+        self.write_shader(shader)
     }
 
-    fn frag_shader(&self) -> Option<String> {
-        None
+    fn frag_shader(&self) -> Result<String, GlslError> {
+        let shader = if let Some(frag) = self.frag_main() {
+            frag
+        } else {
+            return Ok(String::new());
+        };
+
+        self.write_shader(shader)
     }
 
     fn used_uniforms(&self, func: &Function) -> Vec<&Variable> {
@@ -161,6 +147,34 @@ impl Program {
                 _ => (),
             }
         }
+    }
+
+    fn write_shader(&self, shader: &Function) -> Result<String, GlslError> {
+        let mut source = String::new();
+
+        global_output(
+            &mut source,
+            "uniform",
+            self.used_uniforms(shader).into_iter(),
+        )?;
+        global_output_loc(
+            &mut source,
+            "in",
+            shader.inputs().into_iter(),
+            &Self::calc_variable_locations(shader.inputs())?,
+        )?;
+        global_output_loc(
+            &mut source,
+            "out",
+            shader.outputs().into_iter(),
+            &Self::calc_variable_locations(shader.outputs())?,
+        )?;
+
+        source.push_str("void main() {\n");
+        write_func(&mut source, self, shader);
+        source.push_str("}\n");
+
+        Ok(source)
     }
 }
 
