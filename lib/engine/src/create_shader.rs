@@ -13,10 +13,8 @@ impl DynamicShader {
         let components: Vec<Attribute> = prim
             .attributes
             .iter()
-            .enumerate()
-            .map(|(loc, (name, &accessor))| {
+            .map(|(name, &accessor)| {
                 Some(Attribute {
-                    location: loc,
                     accessor_idx: accessor as usize,
                     kind: AttributeType::from(&name)?,
                 })
@@ -28,13 +26,14 @@ impl DynamicShader {
         let frag = DynamicShader::create_fragment(&components, prim, model);
 
         pipeline.from_vertex_shader(vert).from_frag_shader(frag);
-        Self::set_attribs(pipeline, prim, model)
+        Self::set_attribs(pipeline, prim, model, &components)
     }
 
     fn set_attribs(
         pipeline: &mut Pipeline,
         prim: &gltf::Primitive,
         model: &Model,
+        components: &[Attribute],
     ) -> Result<usize, ModelError> {
         if !prim.attributes.contains_key("POSITION") {
             return Err(ModelError::NoPositions);
@@ -44,7 +43,9 @@ impl DynamicShader {
             .attributes
             .iter()
             .enumerate()
-            .map(|(idx, (_, &attr))| Self::attrib(pipeline, model, attr, idx as u32))
+            .map(|(idx, (_, &attr))| {
+                Self::attrib(pipeline, model, attr, &components[idx].variable())
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let zero = counts[0];
@@ -62,7 +63,7 @@ impl DynamicShader {
         pipeline: &mut Pipeline,
         model: &Model,
         attr: i32,
-        index: u32,
+        name: &str,
     ) -> Result<usize, ModelError> {
         let accessor =
             model
@@ -85,7 +86,7 @@ impl DynamicShader {
             got: buf,
         })?;
 
-        Model::load_accessor(pipeline, buf, accessor, index)?;
+        Model::load_accessor(pipeline, buf, accessor, name)?;
 
         Ok(accessor.count)
     }
@@ -96,12 +97,7 @@ impl DynamicShader {
 
         for comp in components {
             if let Some(layout) = comp.layout(prim, model) {
-                shader.push_str(&format!(
-                    "layout (location = {}) in {} {};\n",
-                    comp.location,
-                    layout,
-                    comp.variable()
-                ));
+                shader.push_str(&format!("in {} {};\n", layout, comp.variable()));
             }
         }
 
@@ -200,7 +196,6 @@ impl DynamicShader {
 
 struct Attribute {
     kind: AttributeType,
-    location: usize,
     accessor_idx: usize,
 }
 

@@ -147,21 +147,22 @@ impl Pipeline {
     /// add a vertex attribute, e.g. vertex position, uv coordinates, ...
     pub fn vertex_attribute(
         &mut self,
-        location: u32,
+        name: &str,
         count: usize,
         item_type: AttributeType,
         normalised: bool,
     ) -> &mut Self {
-        self.attributes
-            .push(VertexAttribute::new(location, count, item_type, normalised));
+        self.attributes.push(VertexAttribute::new(
+            name.to_string(),
+            count,
+            item_type,
+            normalised,
+        ));
         self
     }
 }
 
 pub(crate) struct VertexAttribute {
-    /// Location specified in the shader by layout(location = N)
-    pub(crate) location: u32,
-
     /// The number of items in this vertex attribute, e.g. vec3 => 3
     pub(crate) count: usize,
 
@@ -170,12 +171,14 @@ pub(crate) struct VertexAttribute {
 
     /// Whether the values should be normalised
     pub(crate) normalised: bool,
+
+    pub(crate) name: String,
 }
 
 impl VertexAttribute {
-    pub fn new(location: u32, count: usize, item_type: AttributeType, normalised: bool) -> Self {
+    pub fn new(name: String, count: usize, item_type: AttributeType, normalised: bool) -> Self {
         Self {
-            location,
+            name,
             count,
             item_type,
             normalised,

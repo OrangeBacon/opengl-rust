@@ -175,7 +175,6 @@ pub enum VariableAllocationContext {
 pub struct Variable {
     pub name: String,
     pub ty: Type,
-    pub start_location: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,7 +214,6 @@ impl Program {
 
         constructor(&mut ctx);
 
-        ctx.program.check_params();
         ctx.program
     }
 
@@ -400,7 +398,6 @@ impl Function {
         self.vars.locals.push(Variable {
             name,
             ty,
-            start_location: None,
         });
 
         VariableId {
@@ -941,34 +938,6 @@ impl Type {
     }
 }
 
-impl Program {
-    /// check that functions do not have layout locations specified unless
-    /// they are main functions of a shader
-    fn check_params(&mut self) {
-        let mut main = vec![];
-        if let Some(vert) = &self.vertex {
-            main.push(vert.main);
-        }
-        if let Some(frag) = &self.frag {
-            main.push(frag.main);
-        }
-
-        for (idx, func) in self.functions.iter().enumerate() {
-            if main.contains(&idx) {
-                continue;
-            }
-
-            for var in func.all_vars() {
-                if var.start_location != None {
-                    self.errors.push(ShaderCreationError::VariableLocation {
-                        name: var.name.clone(),
-                    })
-                }
-            }
-        }
-    }
-}
-
 // ----------------------- //
 // Display Implementations //
 // ----------------------- //
@@ -1000,10 +969,6 @@ impl Display for Program {
 impl Variable {
     fn to_string(&self, kind: &str) -> Result<String, fmt::Error> {
         let mut s = String::new();
-
-        if let Some(loc) = self.start_location {
-            write!(s, "layout(location = {}) ", loc)?;
-        };
 
         write!(s, "{}${}: {}", kind, self.name, self.ty)?;
 

@@ -49,11 +49,6 @@ pub fn context_globals(attr: TokenStream, input: TokenStream) -> TokenStream {
         let global_name = global.to_string();
         let global_name = &global_name[..global_name.len() - 1];
 
-        // get the name for the method with explicit variable location specified
-        let mut global_loc = String::from(global_name);
-        global_loc.push_str("_loc");
-        let global_loc = Ident::new(&global_loc, global.span());
-
         // infer the name of the GlobalAllocationContext enum varient
         let mut allocation = String::from(
             global_name
@@ -74,24 +69,6 @@ pub fn context_globals(attr: TokenStream, input: TokenStream) -> TokenStream {
                 self.#accessor.#global.push(Variable {
                     name: name.to_string(),
                     ty,
-                    start_location: None,
-                });
-
-                Expression::GetVariable {
-                    variable: VariableId {
-                        id,
-                        kind: VariableAllocationContext::#allocation
-                    },
-                }
-            }
-
-            #vis fn #global_loc(&mut self, name: &str, ty: Type, start_location: usize) -> Expression {
-                let id = self.#accessor.#global.len();
-
-                self.#accessor.#global.push(Variable {
-                    name: name.to_string(),
-                    ty,
-                    start_location: Some(start_location),
                 });
 
                 Expression::GetVariable {

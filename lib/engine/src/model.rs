@@ -529,7 +529,7 @@ impl Model {
         pipeline: &mut Pipeline,
         buf: &GPUBuffer,
         accessor: &gltf::Accessor,
-        index: u32,
+        name: &str,
     ) -> Result<(), ModelError> {
         if let GPUBuffer::Vertex(_) = buf {
         } else {
@@ -539,7 +539,7 @@ impl Model {
         let item_type = accessor.component_type.attribute_type();
 
         pipeline.vertex_attribute(
-            index,
+            name,
             accessor.r#type.component_count() as _,
             item_type,
             false,
@@ -1229,10 +1229,8 @@ impl GPUPrimitive {
         let components: Vec<Attribute> = prim
             .attributes
             .iter()
-            .enumerate()
-            .map(|(loc, (name, &accessor))| {
+            .map(|(name, &accessor)| {
                 Some(Attribute {
-                    location: loc,
                     accessor_idx: accessor as usize,
                     kind: AttributeType::from(&name)?,
                 })
@@ -1277,7 +1275,6 @@ impl GPUPrimitive {
 
 struct Attribute {
     kind: AttributeType,
-    location: usize,
     accessor_idx: usize,
 }
 
@@ -1317,7 +1314,7 @@ impl Attribute {
                 let view = ctx.uniform("view", Type::Mat4);
                 let model = ctx.uniform("model", Type::Mat4);
                 let projection = ctx.uniform("projection", Type::Mat4);
-                let position = ctx.input_loc("Position", Type::Vec3, self.location);
+                let position = ctx.input("Position", Type::Vec3);
 
                 let value = projection * view * model * Expression::vec(&[position, 1.0.into()]);
 
@@ -1331,14 +1328,13 @@ impl Attribute {
                         Type::Vec4
                     };
 
-                let color = ctx.input_loc(&format!("Color{}", idx), ty.clone(), self.location);
-                let output = ctx.output_loc(&format!("Color{}_out", idx), ty, self.location);
+                let color = ctx.input(&format!("Color{}", idx), ty.clone());
+                let output = ctx.output(&format!("Color{}_out", idx), ty);
                 ctx.set_output(output, color);
             }
             AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
-                let coord = ctx.input_loc(&format!("TexCoord{}", idx), Type::Vec2, self.location);
-                let output =
-                    ctx.output_loc(&format!("TexCoord{}_out", idx), Type::Vec2, self.location);
+                let coord = ctx.input(&format!("TexCoord{}", idx), Type::Vec2);
+                let output = ctx.output(&format!("TexCoord{}_out", idx), Type::Vec2);
                 ctx.set_output(output, coord);
             }
             _ => (),
@@ -1360,13 +1356,13 @@ impl Attribute {
                         Type::Vec4
                     };
 
-                let color = ctx.input_loc(&format!("Color{}", idx), ty.clone(), self.location);
+                let color = ctx.input(&format!("Color{}", idx), ty.clone());
 
                 Some(color)
             }
             AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
                 let base_color = ctx.uniform("base_color", Type::Sampler2D);
-                let uv = ctx.input_loc(&format!("TexCoord{}", idx), Type::Vec2, self.location);
+                let uv = ctx.input(&format!("TexCoord{}", idx), Type::Vec2);
 
                 Some(Expression::texture(base_color, uv))
             }

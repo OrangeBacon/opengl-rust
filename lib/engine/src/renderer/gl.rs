@@ -368,6 +368,8 @@ impl GlPipeline {
         }
 
         for (i, attribute) in pipeline.attributes.iter().enumerate() {
+            let name = CString::new(&attribute.name[..])?;
+
             let attribute_type = match attribute.item_type {
                 AttributeType::I8 => gl::BYTE,
                 AttributeType::I16 => gl::SHORT,
@@ -384,16 +386,19 @@ impl GlPipeline {
             };
 
             unsafe {
-                gl.EnableVertexArrayAttrib(vao, attribute.location);
-                gl.VertexArrayAttribFormat(
-                    vao,
-                    attribute.location,
-                    attribute.count as _,
-                    attribute_type,
-                    normalised,
-                    0,
-                );
-                gl.VertexArrayAttribBinding(vao, attribute.location, i as _);
+                let location = gl.GetAttribLocation(program_id, name.as_ptr());
+                if location >= 0 {
+                    gl.EnableVertexArrayAttrib(vao, location as _);
+                    gl.VertexArrayAttribFormat(
+                        vao,
+                        location as _,
+                        attribute.count as _,
+                        attribute_type,
+                        normalised,
+                        0,
+                    );
+                    gl.VertexArrayAttribBinding(vao, location as _, i as _);
+                }
             }
         }
 
