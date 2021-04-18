@@ -84,7 +84,7 @@ impl Renderer {
 
     /// Load a new pipeline, including shader compilation
     #[inline(always)]
-    pub fn load_pipeline(&mut self, pipeline: Pipeline) -> Result<PipelineId> {
+    pub fn load_pipeline(&mut self, pipeline: Program) -> Result<PipelineId> {
         self.backend.load_pipeline(pipeline)
     }
 
@@ -99,103 +99,6 @@ impl Renderer {
     pub fn bind_pipeline(&mut self, pipeline: PipelineId) -> BoundPipeline {
         BoundPipeline::new(self, pipeline)
     }
-
-    pub fn program(&mut self, program: Program) -> Result<()> {
-        self.backend.program(program)
-    }
-}
-
-/// A rendering pipeline, in OpenGl would be one shader program
-pub struct Pipeline {
-    pub(crate) vertex_shader: Option<String>,
-    pub(crate) fragment_shader: Option<String>,
-    pub(crate) attributes: Vec<VertexAttribute>,
-}
-
-impl Pipeline {
-    /// create a new pipeline
-    pub fn new() -> Self {
-        Pipeline {
-            vertex_shader: None,
-            fragment_shader: None,
-            attributes: vec![],
-        }
-    }
-
-    /// set the vertex shader source
-    pub fn vertex_shader(&mut self, source: &str) -> &mut Self {
-        self.from_vertex_shader(source.to_string())
-    }
-
-    /// set the vertex shader source
-    pub fn from_vertex_shader(&mut self, source: String) -> &mut Self {
-        self.vertex_shader = Some(source);
-        self
-    }
-
-    /// set the fragment shader source
-    pub fn frag_shader(&mut self, source: &str) -> &mut Self {
-        self.from_frag_shader(source.to_string())
-    }
-
-    /// set the fragment shader source
-    pub fn from_frag_shader(&mut self, source: String) -> &mut Self {
-        self.fragment_shader = Some(source);
-        self
-    }
-
-    /// add a vertex attribute, e.g. vertex position, uv coordinates, ...
-    pub fn vertex_attribute(
-        &mut self,
-        name: &str,
-        count: usize,
-        item_type: AttributeType,
-        normalised: bool,
-    ) -> &mut Self {
-        self.attributes.push(VertexAttribute::new(
-            name.to_string(),
-            count,
-            item_type,
-            normalised,
-        ));
-        self
-    }
-}
-
-pub(crate) struct VertexAttribute {
-    /// The number of items in this vertex attribute, e.g. vec3 => 3
-    pub(crate) count: usize,
-
-    /// The type of the items in this attribute
-    pub(crate) item_type: AttributeType,
-
-    /// Whether the values should be normalised
-    pub(crate) normalised: bool,
-
-    pub(crate) name: String,
-}
-
-impl VertexAttribute {
-    pub fn new(name: String, count: usize, item_type: AttributeType, normalised: bool) -> Self {
-        Self {
-            name,
-            count,
-            item_type,
-            normalised,
-        }
-    }
-}
-
-/// The type of a vertex attribute, enum names correspond to the equivalent rust types
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
-pub enum AttributeType {
-    I8,
-    I16,
-    F32,
-    F64,
-    U8,
-    U16,
-    U32,
 }
 
 pub struct BoundPipeline<'a> {

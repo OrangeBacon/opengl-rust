@@ -12,9 +12,6 @@ pub mod window;
 
 mod data_uri;
 
-mod create_shader;
-pub use create_shader::DynamicShader;
-
 mod layer;
 pub use layer::{CallOrder, EventResult, Layer};
 

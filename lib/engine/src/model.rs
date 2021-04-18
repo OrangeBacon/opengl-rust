@@ -8,13 +8,12 @@ use crate::{
         shader::{
             BuiltinVariable, Expression, FunctionContext, Program, ShaderCreationError, Type,
         },
-        DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, Renderer, TextureId,
-        VertexBufferId,
+        DrawingMode, IndexBufferId, IndexType, PipelineId, Renderer, TextureId, VertexBufferId,
     },
     resources::{Error as ResourceError, Resources},
     texture,
     texture::Texture,
-    DynamicShader, EngineStateRef,
+    EngineStateRef,
 };
 use anyhow::Result;
 use nalgebra_glm as glm;
@@ -521,29 +520,6 @@ impl Model {
 
             self.gpu_pipelines.push(pipelines);
         }
-
-        Ok(())
-    }
-
-    pub(crate) fn load_accessor(
-        pipeline: &mut Pipeline,
-        buf: &GPUBuffer,
-        accessor: &gltf::Accessor,
-        name: &str,
-    ) -> Result<(), ModelError> {
-        if let GPUBuffer::Vertex(_) = buf {
-        } else {
-            return Ok(());
-        };
-
-        let item_type = accessor.component_type.attribute_type();
-
-        pipeline.vertex_attribute(
-            name,
-            accessor.r#type.component_count() as _,
-            item_type,
-            false,
-        );
 
         Ok(())
     }
@@ -1069,8 +1045,7 @@ impl GPUPrimitive {
         model: &Model,
         renderer: &mut Renderer,
     ) -> Result<Self, ModelError> {
-        let mut pipeline = Pipeline::new();
-        let vertex_count = DynamicShader::new(&mut pipeline, prim, model)?;
+        let pipeline = Self::create_shader(prim, model)?;
 
         let mat = if let Some(mat) = prim.material {
             Some(&model.gltf.materials[mat])
@@ -1136,12 +1111,8 @@ impl GPUPrimitive {
                 }
             });
 
-        let (vertex_buffers, vertex_offsets, vertex_strides) =
+        let (vertex_buffers, vertex_offsets, vertex_strides, vertex_count) =
             Self::get_vertex_array_data(prim, model)?;
-
-        renderer
-            .program(Self::create_shader_test(prim, model)?)
-            .map_err(|e| ModelError::NativeShader { source: e })?;
 
         Ok(Self {
             pipeline,
@@ -1160,17 +1131,23 @@ impl GPUPrimitive {
     fn get_vertex_array_data(
         prim: &gltf::Primitive,
         model: &Model,
-    ) -> Result<(Vec<VertexBufferId>, Vec<usize>, Vec<i32>), ModelError> {
+    ) -> Result<(Vec<VertexBufferId>, Vec<usize>, Vec<i32>, usize), ModelError> {
         let capacity = prim.attributes.len();
         let mut buffers = Vec::with_capacity(capacity);
         let mut offsets = Vec::with_capacity(capacity);
         let mut strides = Vec::with_capacity(capacity);
+        let mut vertex_count = 0;
 
         for (_, &attr) in &prim.attributes {
             let accessor = &model.gltf.accessors[attr as usize];
             if let Some(view_idx) = accessor.buffer_view {
                 if let GPUBuffer::Vertex(buf) = model.gpu_buffers[view_idx] {
                     let view = &model.gltf.buffer_views[view_idx];
+
+                    if vertex_count != 0 && vertex_count != accessor.count {
+                        return Err(ModelError::AttribLen);
+                    }
+                    vertex_count = accessor.count;
 
                     buffers.push(buf);
                     offsets.push(accessor.byte_offset);
@@ -1183,7 +1160,7 @@ impl GPUPrimitive {
             }
         }
 
-        Ok((buffers, offsets, strides))
+        Ok((buffers, offsets, strides, vertex_count))
     }
 
     fn render(
@@ -1201,7 +1178,7 @@ impl GPUPrimitive {
         pipeline.bind_matrix("model", *model);
 
         if let Some(tex) = self.base_color_texidx {
-            pipeline.bind_texture("baseColor", tex)?;
+            pipeline.bind_texture("base_color", tex)?;
         }
 
         pipeline.bind_vertex_arrays(
@@ -1225,7 +1202,7 @@ impl GPUPrimitive {
         Ok(())
     }
 
-    fn create_shader_test(prim: &gltf::Primitive, model: &Model) -> Result<Program, ModelError> {
+    fn create_shader(prim: &gltf::Primitive, model: &Model) -> Result<Program, ModelError> {
         let components: Vec<Attribute> = prim
             .attributes
             .iter()
@@ -1241,7 +1218,7 @@ impl GPUPrimitive {
         let mut shader = Program::new(|ctx| {
             ctx.vertex(|ctx| {
                 for comp in &components {
-                    comp.vertex(ctx, prim, model);
+                    comp.vertex(ctx, model);
                 }
             });
 
@@ -1308,36 +1285,57 @@ impl AttributeType {
 }
 
 impl Attribute {
-    fn vertex(&self, ctx: &mut FunctionContext, prim: &gltf::Primitive, model: &Model) {
+    fn vertex(&self, ctx: &mut FunctionContext, model: &Model) {
         match self.kind {
             AttributeType::Position => {
                 let view = ctx.uniform("view", Type::Mat4);
                 let model = ctx.uniform("model", Type::Mat4);
                 let projection = ctx.uniform("projection", Type::Mat4);
-                let position = ctx.input("Position", Type::Vec3);
+                let position = ctx.input("Position_in", Type::Vec3);
 
                 let value = projection * view * model * Expression::vec(&[position, 1.0.into()]);
 
                 ctx.set_builtin(BuiltinVariable::VertexPosition, value)
             }
             AttributeType::Color(idx) => {
-                let ty =
-                    if model.gltf.accessors[self.accessor_idx].r#type == gltf::AccessorType::Vec3 {
-                        Type::Vec3
-                    } else {
-                        Type::Vec4
-                    };
+                let ty = model.gltf.accessors[self.accessor_idx]
+                    .r#type
+                    .to_shader_type();
 
-                let color = ctx.input(&format!("Color{}", idx), ty.clone());
-                let output = ctx.output(&format!("Color{}_out", idx), ty);
+                let color = ctx.input(&format!("Color{}_in", idx), ty.clone());
+                let output = ctx.output(&format!("Color{}", idx), ty);
                 ctx.set_output(output, color);
             }
-            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
-                let coord = ctx.input(&format!("TexCoord{}", idx), Type::Vec2);
-                let output = ctx.output(&format!("TexCoord{}_out", idx), Type::Vec2);
+            AttributeType::TexCoord(idx) => {
+                let coord = ctx.input(&format!("TexCoord{}_in", idx), Type::Vec2);
+                let output = ctx.output(&format!("TexCoord{}", idx), Type::Vec2);
                 ctx.set_output(output, coord);
             }
-            _ => (),
+
+            AttributeType::Normal => {
+                let ty = model.gltf.accessors[self.accessor_idx]
+                    .r#type
+                    .to_shader_type();
+                ctx.input("Normal_in", ty);
+            }
+            AttributeType::Tangent => {
+                let ty = model.gltf.accessors[self.accessor_idx]
+                    .r#type
+                    .to_shader_type();
+                ctx.input("Tangent_in", ty);
+            }
+            AttributeType::Joints(idx) => {
+                let ty = model.gltf.accessors[self.accessor_idx]
+                    .r#type
+                    .to_shader_type();
+                ctx.input(&format!("Joints{}_in", idx), ty);
+            }
+            AttributeType::Weights(idx) => {
+                let ty = model.gltf.accessors[self.accessor_idx]
+                    .r#type
+                    .to_shader_type();
+                ctx.input(&format!("Weights{}_in", idx), ty);
+            }
         }
     }
 

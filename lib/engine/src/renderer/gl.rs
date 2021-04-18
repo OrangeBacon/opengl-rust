@@ -12,8 +12,9 @@ use crate::{
 };
 
 use super::{
-    backend::RendererBackend, shader::Program, AttributeType, DrawingMode, IdType, IndexBufferId,
-    IndexType, Pipeline, PipelineId, TextureId, VertexBufferId,
+    backend::RendererBackend,
+    shader::{Program, Type},
+    DrawingMode, IdType, IndexBufferId, IndexType, PipelineId, TextureId, VertexBufferId,
 };
 
 #[derive(Debug, Error)]
@@ -38,6 +39,9 @@ enum GlError {
 
     #[error("Texture is not currently loaded, cannot bind it to a pipeline")]
     TextureUnloaded,
+
+    #[error("Unable to load opaque type as vertex array")]
+    OpaqueVerticies,
 }
 
 pub struct GlRenderer {
@@ -166,7 +170,7 @@ impl RendererBackend for GlRenderer {
         self.buffers.remove(&buffer.0);
     }
 
-    fn load_pipeline(&mut self, pipeline: Pipeline) -> Result<PipelineId> {
+    fn load_pipeline(&mut self, pipeline: Program) -> Result<PipelineId> {
         let id = self.id;
         self.id += 1;
 
@@ -261,9 +265,17 @@ impl RendererBackend for GlRenderer {
             .map(|&buffer| self.buffers[&buffer.0].id())
             .collect();
 
+        let pipeline = &self.pipelines[&pipeline.0];
+
+        if let Some(vert) = pipeline.pipeline.vertex_main() {
+            if vert.inputs().len() != buffers.len() {
+                println!("Error: Trying to setup incorrect vertex buffers");
+            }
+        }
+
         unsafe {
             self.gl.VertexArrayVertexBuffers(
-                self.pipelines[&pipeline.0].vao,
+                pipeline.vao,
                 0,
                 buffers.len() as _,
                 buffers.as_ptr(),
@@ -321,23 +333,22 @@ impl RendererBackend for GlRenderer {
                 .DrawElements(mode, count as _, index_type, index_offset as _);
         }
     }
-
-    fn program(&self, program: Program) -> Result<()> {
-        program.to_glsl()
-    }
 }
 
 struct GlPipeline {
     gl: gl::Gl,
     program_id: GLuint,
     vao: GLuint,
+    pipeline: Program,
 }
 
 impl GlPipeline {
-    fn new(pipeline: Pipeline, gl: gl::Gl) -> Result<Self> {
+    fn new(mut pipeline: Program, gl: gl::Gl) -> Result<Self> {
+        let shaders = pipeline.to_glsl()?;
+
         let shaders = vec![
-            (pipeline.vertex_shader, gl::VERTEX_SHADER),
-            (pipeline.fragment_shader, gl::FRAGMENT_SHADER),
+            (shaders.vert, gl::VERTEX_SHADER),
+            (shaders.frag, gl::FRAGMENT_SHADER),
         ];
 
         // convert shader source code into gl shader ids
@@ -367,37 +378,32 @@ impl GlPipeline {
             gl.CreateVertexArrays(1, &mut vao);
         }
 
-        for (i, attribute) in pipeline.attributes.iter().enumerate() {
-            let name = CString::new(&attribute.name[..])?;
+        if let Some(vert) = pipeline.vertex_main() {
+            for (i, attribute) in vert.inputs().iter().enumerate() {
+                let name = CString::new(&attribute.name[..])?;
 
-            let attribute_type = match attribute.item_type {
-                AttributeType::I8 => gl::BYTE,
-                AttributeType::I16 => gl::SHORT,
-                AttributeType::F32 => gl::FLOAT,
-                AttributeType::F64 => gl::DOUBLE,
-                AttributeType::U8 => gl::UNSIGNED_BYTE,
-                AttributeType::U16 => gl::UNSIGNED_SHORT,
-                AttributeType::U32 => gl::UNSIGNED_INT,
-            };
+                let count = match attribute.ty {
+                    Type::Vector(n) => n,
+                    Type::Matrix(n, m) => n * m,
+                    Type::Floating => 1,
+                    Type::Sampler2D | Type::Unknown => return Err(GlError::OpaqueVerticies.into()),
+                };
 
-            let normalised = match attribute.normalised {
-                true => gl::TRUE,
-                false => gl::FALSE,
-            };
+                unsafe {
+                    let location = gl.GetAttribLocation(program_id, name.as_ptr());
 
-            unsafe {
-                let location = gl.GetAttribLocation(program_id, name.as_ptr());
-                if location >= 0 {
-                    gl.EnableVertexArrayAttrib(vao, location as _);
-                    gl.VertexArrayAttribFormat(
-                        vao,
-                        location as _,
-                        attribute.count as _,
-                        attribute_type,
-                        normalised,
-                        0,
-                    );
-                    gl.VertexArrayAttribBinding(vao, location as _, i as _);
+                    if location >= 0 {
+                        gl.EnableVertexArrayAttrib(vao, location as _);
+                        gl.VertexArrayAttribFormat(
+                            vao,
+                            location as _,
+                            count as _,
+                            gl::FLOAT,
+                            false as _,
+                            0,
+                        );
+                        gl.VertexArrayAttribBinding(vao, location as _, i as _);
+                    }
                 }
             }
         }
@@ -406,6 +412,7 @@ impl GlPipeline {
             program_id,
             vao,
             gl,
+            pipeline,
         })
     }
 

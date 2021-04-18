@@ -15,7 +15,7 @@ use serde_json::Value;
 use serde_repr::Deserialize_repr;
 use thiserror::Error;
 
-use crate::renderer::{AttributeType, IndexType};
+use crate::renderer::{shader::Type, IndexType};
 use crate::resources::{Error as ResourceError, Resources};
 
 #[derive(Debug, Error)]
@@ -282,20 +282,6 @@ pub enum ComponentType {
 
 impl ComponentType {
     /// convert a type to the renderer attribute type enum value
-    pub fn attribute_type(&self) -> AttributeType {
-        use ComponentType::*;
-
-        match self {
-            Byte => AttributeType::I8,
-            UnsignedByte => AttributeType::U8,
-            Short => AttributeType::I16,
-            UnsignedShort => AttributeType::U16,
-            UnsignedInt => AttributeType::U32,
-            Float => AttributeType::F32,
-        }
-    }
-
-    /// convert a type to the renderer attribute type enum value
     pub fn index_type(&self) -> Option<IndexType> {
         use ComponentType::*;
 
@@ -350,6 +336,18 @@ impl AccessorType {
             Mat2 => 4,
             Mat3 => 9,
             Mat4 => 16,
+        }
+    }
+
+    pub fn to_shader_type(&self) -> Type {
+        match self {
+            AccessorType::Scalar => Type::Floating,
+            AccessorType::Vec2 => Type::Vec2,
+            AccessorType::Vec3 => Type::Vec3,
+            AccessorType::Vec4 => Type::Vec4,
+            AccessorType::Mat2 => Type::Mat2,
+            AccessorType::Mat3 => Type::Mat3,
+            AccessorType::Mat4 => Type::Mat4,
         }
     }
 }

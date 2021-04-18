@@ -191,6 +191,8 @@ pub enum Type {
 impl Type {
     #![allow(non_upper_case_globals)]
 
+    pub const Mat2: Type = Type::Matrix(2, 2);
+    pub const Mat3: Type = Type::Matrix(3, 3);
     pub const Mat4: Type = Type::Matrix(4, 4);
     pub const Vec4: Type = Type::Vector(4);
     pub const Vec3: Type = Type::Vector(3);
@@ -395,10 +397,7 @@ impl Function {
             name.to_string()
         };
 
-        self.vars.locals.push(Variable {
-            name,
-            ty,
-        });
+        self.vars.locals.push(Variable { name, ty });
 
         VariableId {
             id,

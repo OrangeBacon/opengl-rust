@@ -10,19 +10,19 @@ enum GlslError {
     UnreprsentableType { ty: Type },
 }
 
+pub(super) struct GlslCode {
+    pub(super) vert: Option<String>,
+    pub(super) frag: Option<String>,
+}
+
 impl Program {
-    pub(super) fn to_glsl(mut self) -> Result<(), anyhow::Error> {
+    pub(super) fn to_glsl(&mut self) -> Result<GlslCode, anyhow::Error> {
         self.glsl_verification()?;
 
-        if let Ok(vert) = self.vert_shader() {
-            println!("{}", vert);
-        }
-
-        if let Ok(frag) = self.frag_shader() {
-            println!("{}", frag);
-        }
-
-        Ok(())
+        Ok(GlslCode {
+            vert: self.vert_shader()?,
+            frag: self.frag_shader()?,
+        })
     }
 
     fn glsl_verification(&self) -> Result<(), GlslError> {
@@ -43,21 +43,21 @@ impl Program {
         Ok(())
     }
 
-    fn vert_shader(&mut self) -> Result<String, GlslError> {
+    fn vert_shader(&mut self) -> Result<Option<String>, GlslError> {
         let shader = if let Some(vert) = self.vertex_main() {
             vert
         } else {
-            return Ok(String::new());
+            return Ok(None);
         };
 
         self.write_shader(shader)
     }
 
-    fn frag_shader(&self) -> Result<String, GlslError> {
+    fn frag_shader(&self) -> Result<Option<String>, GlslError> {
         let shader = if let Some(frag) = self.frag_main() {
             frag
         } else {
-            return Ok(String::new());
+            return Ok(None);
         };
 
         self.write_shader(shader)
@@ -87,8 +87,8 @@ impl Program {
         }
     }
 
-    fn write_shader(&self, shader: &Function) -> Result<String, GlslError> {
-        let mut source = String::new();
+    fn write_shader(&self, shader: &Function) -> Result<Option<String>, GlslError> {
+        let mut source = String::from("#version 330 core\n");
 
         global_output(
             &mut source,
@@ -102,7 +102,7 @@ impl Program {
         write_func(&mut source, self, shader);
         source.push_str("}\n");
 
-        Ok(source)
+        Ok(Some(source))
     }
 }
 

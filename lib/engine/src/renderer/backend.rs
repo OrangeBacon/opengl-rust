@@ -2,8 +2,7 @@ use anyhow::Result;
 use nalgebra_glm as glm;
 
 use super::{
-    shader::Program, DrawingMode, IndexBufferId, IndexType, Pipeline, PipelineId, TextureId,
-    VertexBufferId,
+    shader::Program, DrawingMode, IndexBufferId, IndexType, PipelineId, TextureId, VertexBufferId,
 };
 use crate::texture::Texture;
 
@@ -37,7 +36,7 @@ pub trait RendererBackend {
     fn unload_index_buffer(&mut self, buffer: IndexBufferId);
 
     /// Load a new pipeline
-    fn load_pipeline(&mut self, pipeline: Pipeline) -> Result<PipelineId>;
+    fn load_pipeline(&mut self, pipeline: Program) -> Result<PipelineId>;
 
     /// Unloads a pipeline
     fn unload_pipeline(&mut self, pipeline: PipelineId);
@@ -82,7 +81,4 @@ pub trait RendererBackend {
         index_offset: usize,
         count: usize,
     );
-
-    /// try printing a shader program in a backend specific way lol e.g. glsl formatter
-    fn program(&self, program: Program) -> Result<()>;
 }
