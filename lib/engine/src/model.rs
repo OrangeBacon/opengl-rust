@@ -1203,17 +1203,19 @@ impl GPUPrimitive {
     }
 
     fn create_shader(prim: &gltf::Primitive, model: &Model) -> Result<Program, ModelError> {
-        let components: Vec<Attribute> = prim
+        let mut components: Vec<Attribute> = prim
             .attributes
             .iter()
-            .map(|(name, &accessor)| {
-                Some(Attribute {
-                    accessor_idx: accessor as usize,
-                    kind: AttributeType::from(&name)?,
-                })
-            })
+            .map(|(name, &accessor)| Some(Attribute::from(&name, accessor as _)?))
             .flatten()
             .collect();
+
+        let material_components = prim
+            .material
+            .map(|mat| Attribute::material(&model.gltf.materials[mat]));
+        if let Some(material_components) = material_components {
+            components.extend(material_components);
+        }
 
         let mut shader = Program::new(|ctx| {
             ctx.vertex(|ctx| {
@@ -1250,92 +1252,104 @@ impl GPUPrimitive {
     }
 }
 
-struct Attribute {
-    kind: AttributeType,
-    accessor_idx: usize,
-}
-
-enum AttributeType {
+enum Attribute {
     Position,
-    Normal,
-    Tangent,
-    TexCoord(usize),
-    Color(usize),
-    Joints(usize),
-    Weights(usize),
+    Normal { accessor: usize },
+    Tangent { accessor: usize },
+    TexCoord { idx: usize },
+    VertexColor { accessor: usize, idx: usize },
+    Joints { accessor: usize, idx: usize },
+    Weights { accessor: usize, idx: usize },
+    BaseColor { color: [f32; 4] },
 }
 
-impl AttributeType {
-    fn from(value: &str) -> Option<Self> {
+impl Attribute {
+    fn from(value: &str, accessor: usize) -> Option<Self> {
         let comps: Vec<_> = value.split('_').collect();
 
         let ty = match comps.as_slice() {
-            ["POSITION"] => AttributeType::Position,
-            ["NORMAL"] => AttributeType::Normal,
-            ["TANGENT"] => AttributeType::Tangent,
-            ["TEXCOORD", a] => AttributeType::TexCoord(a.parse().ok()?),
-            ["COLOR", a] => AttributeType::Color(a.parse().ok()?),
-            ["JOINTS", a] => AttributeType::Joints(a.parse().ok()?),
-            ["WEIGHTS", a] => AttributeType::Weights(a.parse().ok()?),
+            ["POSITION"] => Attribute::Position,
+            ["NORMAL"] => Attribute::Normal { accessor },
+            ["TANGENT"] => Attribute::Tangent { accessor },
+            ["TEXCOORD", a] => Attribute::TexCoord {
+                idx: a.parse().ok()?,
+            },
+            ["COLOR", a] => Attribute::VertexColor {
+                accessor,
+                idx: a.parse().ok()?,
+            },
+            ["JOINTS", a] => Attribute::Joints {
+                accessor,
+                idx: a.parse().ok()?,
+            },
+            ["WEIGHTS", a] => Attribute::Weights {
+                accessor,
+                idx: a.parse().ok()?,
+            },
             _ => return None,
         };
 
         Some(ty)
     }
+
+    fn material(mat: &gltf::Material) -> Vec<Self> {
+        let mut ret = vec![];
+
+        if let Some(pbr) = &mat.pbr_metallic_roughness {
+            if pbr.base_color_factor != [1.0; 4] {
+                ret.push(Attribute::BaseColor {
+                    color: pbr.base_color_factor,
+                })
+            }
+        }
+
+        ret
+    }
 }
 
 impl Attribute {
     fn vertex(&self, ctx: &mut FunctionContext, model: &Model) {
-        match self.kind {
-            AttributeType::Position => {
+        match self {
+            Attribute::Position => {
                 let view = ctx.uniform("view", Type::Mat4);
                 let model = ctx.uniform("model", Type::Mat4);
                 let projection = ctx.uniform("projection", Type::Mat4);
-                let position = ctx.input("Position_in", Type::Vec3);
 
+                let position = ctx.input("Position_in", Type::Vec3);
                 let value = projection * view * model * Expression::vec(&[position, 1.0.into()]);
 
                 ctx.set_builtin(BuiltinVariable::VertexPosition, value)
             }
-            AttributeType::Color(idx) => {
-                let ty = model.gltf.accessors[self.accessor_idx]
-                    .r#type
-                    .to_shader_type();
+            Attribute::VertexColor { accessor, idx } => {
+                let ty = model.gltf.accessors[*accessor].r#type.to_shader_type();
 
                 let color = ctx.input(&format!("Color{}_in", idx), ty.clone());
                 let output = ctx.output(&format!("Color{}", idx), ty);
                 ctx.set_output(output, color);
             }
-            AttributeType::TexCoord(idx) => {
+            Attribute::TexCoord { idx, .. } => {
                 let coord = ctx.input(&format!("TexCoord{}_in", idx), Type::Vec2);
                 let output = ctx.output(&format!("TexCoord{}", idx), Type::Vec2);
                 ctx.set_output(output, coord);
             }
 
-            AttributeType::Normal => {
-                let ty = model.gltf.accessors[self.accessor_idx]
-                    .r#type
-                    .to_shader_type();
+            Attribute::Normal { accessor } => {
+                let ty = model.gltf.accessors[*accessor].r#type.to_shader_type();
                 ctx.input("Normal_in", ty);
             }
-            AttributeType::Tangent => {
-                let ty = model.gltf.accessors[self.accessor_idx]
-                    .r#type
-                    .to_shader_type();
+            Attribute::Tangent { accessor } => {
+                let ty = model.gltf.accessors[*accessor].r#type.to_shader_type();
                 ctx.input("Tangent_in", ty);
             }
-            AttributeType::Joints(idx) => {
-                let ty = model.gltf.accessors[self.accessor_idx]
-                    .r#type
-                    .to_shader_type();
+            Attribute::Joints { accessor, idx } => {
+                let ty = model.gltf.accessors[*accessor].r#type.to_shader_type();
                 ctx.input(&format!("Joints{}_in", idx), ty);
             }
-            AttributeType::Weights(idx) => {
-                let ty = model.gltf.accessors[self.accessor_idx]
-                    .r#type
-                    .to_shader_type();
+            Attribute::Weights { accessor, idx } => {
+                let ty = model.gltf.accessors[*accessor].r#type.to_shader_type();
                 ctx.input(&format!("Weights{}_in", idx), ty);
             }
+            Attribute::BaseColor { .. } => {}
         }
     }
 
@@ -1345,24 +1359,29 @@ impl Attribute {
         prim: &gltf::Primitive,
         model: &Model,
     ) -> Option<Expression> {
-        match self.kind {
-            AttributeType::Color(idx) => {
-                let ty =
-                    if model.gltf.accessors[self.accessor_idx].r#type == gltf::AccessorType::Vec3 {
-                        Type::Vec3
-                    } else {
-                        Type::Vec4
-                    };
+        match self {
+            Attribute::VertexColor { accessor, idx } => {
+                let ty = model.gltf.accessors[*accessor].r#type.to_shader_type();
 
                 let color = ctx.input(&format!("Color{}", idx), ty.clone());
 
                 Some(color)
             }
-            AttributeType::TexCoord(idx) if is_base_color(prim, model, idx) => {
+            Attribute::TexCoord { idx, .. } if is_base_color(prim, model, *idx) => {
                 let base_color = ctx.uniform("base_color", Type::Sampler2D);
                 let uv = ctx.input(&format!("TexCoord{}", idx), Type::Vec2);
 
                 Some(Expression::texture(base_color, uv))
+            }
+            Attribute::BaseColor { color } => {
+                let color = [
+                    color[0].into(),
+                    color[1].into(),
+                    color[2].into(),
+                    color[3].into(),
+                ];
+
+                Some(Expression::vec(&color))
             }
             _ => None,
         }

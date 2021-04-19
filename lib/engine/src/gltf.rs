@@ -902,7 +902,7 @@ pub struct MaterialRoughness {
     /// The base color factor, rgba color, if a base texture is specified, this
     /// is multiplied with the texel values
     #[serde(default = "default_color_factor")]
-    pub base_color_factor: [f64; 4],
+    pub base_color_factor: [f32; 4],
 
     /// The base color texture, the rgb components use the sRGB transfer function
     /// If alpha specified, is the linear alpha coverage of the material,
@@ -936,7 +936,7 @@ pub struct MaterialRoughness {
 }
 
 /// The default color factor is [1.0, 1.0, 1.0, 1.0]
-fn default_color_factor() -> [f64; 4] {
+fn default_color_factor() -> [f32; 4] {
     [1.0; 4]
 }
 
