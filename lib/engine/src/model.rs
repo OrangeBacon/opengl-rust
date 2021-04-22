@@ -58,7 +58,7 @@ pub enum ModelError {
     #[error("Error loading texture into vram: {inner}")]
     Texture {
         #[source]
-        inner: crate::texture::Error,
+        inner: crate::texture::TextureError,
     },
 
     #[error("No image provided for texture")]
@@ -257,17 +257,18 @@ impl Model {
             &default
         };
 
-        let sampler = texture::Sampler {
-            wrap_s: sampler.wrap_s as _,
-            wrap_t: sampler.wrap_t as _,
-            min_filter: sampler.min_filter as _,
-            mag_filter: sampler.mag_filter as _,
+        let sampler = texture::TextureOptions {
+            wrap_s: sampler.wrap_s.into(),
+            wrap_t: sampler.wrap_t.into(),
+            min_filter: sampler.min_filter.into(),
+            mag_filter: sampler.mag_filter.into(),
+            ..Default::default()
         };
 
         let source = tex.source.ok_or(ModelError::NoImage)?;
         let data = &images[source];
 
-        let tex = Texture::load_from_bytes(data, sampler)
+        let tex = Texture::from_encoding_config(data, sampler)
             .map_err(|e| ModelError::Texture { inner: e })?;
 
         Ok(tex)

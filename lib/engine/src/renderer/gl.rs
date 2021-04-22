@@ -8,7 +8,10 @@ use thiserror::Error;
 
 use crate::{
     buffer::Buffer,
-    texture::{GlTexture, Texture},
+    texture::{
+        MagFilter, MinFilter, Texture, TextureSourceFormat, TextureSourceType, TextureStorageType,
+        WrappingMode,
+    },
 };
 
 use super::{
@@ -429,6 +432,178 @@ impl Drop for GlPipeline {
         unsafe {
             self.gl.DeleteVertexArrays(1, &self.vao);
             self.gl.DeleteProgram(self.program_id);
+        }
+    }
+}
+
+pub struct GlTexture {
+    gl: gl::Gl,
+    id: GLuint,
+    active_index: GLuint,
+}
+
+impl GlTexture {
+    pub fn new(gl: &gl::Gl, tex: &Texture, index: GLuint) -> Self {
+        let config = tex.config();
+
+        let mut texture = 0;
+        unsafe {
+            gl.ActiveTexture(gl::TEXTURE0 + index);
+            gl.GenTextures(1, &mut texture);
+            gl.BindTexture(gl::TEXTURE_2D, texture);
+
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, wrap_gl(config.wrap_s));
+            gl.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, wrap_gl(config.wrap_t));
+            gl.TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MIN_FILTER,
+                min_filter_gl(config.min_filter),
+            );
+            gl.TexParameteri(
+                gl::TEXTURE_2D,
+                gl::TEXTURE_MAG_FILTER,
+                mag_filter_gl(config.mag_filter),
+            );
+
+            gl.TexImage2D(
+                gl::TEXTURE_2D,
+                0,
+                internal_format_gl(config.storage),
+                tex.width() as _,
+                tex.height() as _,
+                0,
+                format_gl(config.source_format),
+                texture_type_gl(config.source_type),
+                tex.img_ptr() as _,
+            );
+
+            gl.GenerateMipmap(gl::TEXTURE_2D);
+        }
+
+        Self {
+            gl: gl.clone(),
+            id: texture,
+            active_index: 0,
+        }
+    }
+
+    /// Bind this texture to the current shader program.
+    pub fn bind(&self, index: GLuint) -> BoundGlTexture {
+        BoundGlTexture::new(&self, index)
+    }
+
+    pub fn set_bound(&mut self, index: GLuint) {
+        self.active_index = index;
+        unsafe {
+            self.gl.ActiveTexture(gl::TEXTURE0 + index);
+            self.gl.BindTexture(gl::TEXTURE_2D, self.id);
+        }
+    }
+
+    pub fn set_unbound(&mut self) {
+        unsafe {
+            self.gl.ActiveTexture(gl::TEXTURE0 + self.active_index);
+            self.gl.BindTexture(gl::TEXTURE_2D, 0);
+        }
+        self.active_index = 0;
+    }
+}
+
+impl Drop for GlTexture {
+    /// deletes the texture from vram
+    fn drop(&mut self) {
+        unsafe {
+            self.gl.DeleteTextures(1, &self.id);
+        }
+    }
+}
+
+fn wrap_gl(wrap: WrappingMode) -> GLint {
+    match wrap {
+        WrappingMode::Repeat => gl::REPEAT as _,
+        WrappingMode::MirroredRepeat => gl::MIRRORED_REPEAT as _,
+        WrappingMode::ClampToEdge => gl::CLAMP_TO_EDGE as _,
+    }
+}
+
+fn min_filter_gl(min: MinFilter) -> GLint {
+    match min {
+        MinFilter::Nearest => gl::NEAREST as _,
+        MinFilter::Linear => gl::LINEAR as _,
+        MinFilter::NearestMipmapNearest => gl::NEAREST_MIPMAP_NEAREST as _,
+        MinFilter::LinearMipmapNearest => gl::LINEAR_MIPMAP_NEAREST as _,
+        MinFilter::NearestMipmapLinear => gl::NEAREST_MIPMAP_LINEAR as _,
+        MinFilter::LinearMipmapLinear => gl::LINEAR_MIPMAP_LINEAR as _,
+    }
+}
+
+fn mag_filter_gl(mag: MagFilter) -> GLint {
+    match mag {
+        MagFilter::Linear => gl::LINEAR as _,
+        MagFilter::Nearest => gl::NEAREST as _,
+    }
+}
+
+fn internal_format_gl(source: TextureStorageType) -> GLint {
+    match source {
+        TextureStorageType::R => gl::RED as _,
+        TextureStorageType::RG => gl::RG as _,
+        TextureStorageType::RGB => gl::RGB as _,
+        TextureStorageType::SRGB => gl::SRGB as _,
+        TextureStorageType::RGBA => gl::RGBA as _,
+        TextureStorageType::SRGBA => gl::SRGB_ALPHA as _,
+    }
+}
+
+fn format_gl(format: TextureSourceFormat) -> GLenum {
+    match format {
+        TextureSourceFormat::R => gl::RED,
+        TextureSourceFormat::RG => gl::RG,
+        TextureSourceFormat::RGB => gl::RGB,
+        TextureSourceFormat::BGR => gl::BGR,
+        TextureSourceFormat::RGBA => gl::RGBA,
+        TextureSourceFormat::BGRA => gl::BGRA,
+    }
+}
+
+fn texture_type_gl(ty: TextureSourceType) -> GLenum {
+    match ty {
+        TextureSourceType::U8 => gl::UNSIGNED_BYTE,
+        TextureSourceType::I8 => gl::BYTE,
+        TextureSourceType::U16 => gl::UNSIGNED_SHORT,
+        TextureSourceType::I16 => gl::SHORT,
+        TextureSourceType::U32 => gl::UNSIGNED_INT,
+        TextureSourceType::I32 => gl::INT,
+        TextureSourceType::F32 => gl::FLOAT,
+    }
+}
+
+pub struct BoundGlTexture<'a> {
+    tex: &'a GlTexture,
+    index: GLuint,
+}
+
+impl<'a> BoundGlTexture<'a> {
+    fn new(tex: &'a GlTexture, index: GLuint) -> Self {
+        unsafe {
+            tex.gl.ActiveTexture(gl::TEXTURE0 + index);
+            tex.gl.BindTexture(gl::TEXTURE_2D, tex.id);
+        }
+
+        Self { tex, index }
+    }
+
+    /// Get the index of the texture's active texture unit.
+    pub fn index(&self) -> GLuint {
+        self.index
+    }
+}
+
+impl<'a> Drop for BoundGlTexture<'a> {
+    fn drop(&mut self) {
+        unsafe {
+            self.tex.gl.ActiveTexture(gl::TEXTURE0 + self.index);
+            self.tex.gl.BindTexture(gl::TEXTURE_2D, 0);
         }
     }
 }

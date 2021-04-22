@@ -1230,6 +1230,15 @@ impl Default for SamplerMagFilter {
     }
 }
 
+impl From<SamplerMagFilter> for crate::texture::MagFilter {
+    fn from(filter: SamplerMagFilter) -> Self {
+        match filter {
+            SamplerMagFilter::Nearest => Self::Nearest,
+            SamplerMagFilter::Linear => Self::Linear,
+        }
+    }
+}
+
 /// A sampler minification filter, based on the OpenGL enum values
 #[derive(Debug, Deserialize_repr, Clone, Copy)]
 #[repr(u32)]
@@ -1250,6 +1259,19 @@ impl Default for SamplerMinFilter {
     }
 }
 
+impl From<SamplerMinFilter> for crate::texture::MinFilter {
+    fn from(filter: SamplerMinFilter) -> Self {
+        match filter {
+            SamplerMinFilter::Nearest => Self::Nearest,
+            SamplerMinFilter::Linear => Self::Linear,
+            SamplerMinFilter::NearestMipmapNearest => Self::NearestMipmapNearest,
+            SamplerMinFilter::LinearMipmapNearest => Self::LinearMipmapNearest,
+            SamplerMinFilter::NearestMipmapLinear => Self::NearestMipmapLinear,
+            SamplerMinFilter::LinearMipmapLinear => Self::LinearMipmapLinear,
+        }
+    }
+}
+
 /// A sampler wrapping mode, based on the OpenGL wrapping mode enum
 #[derive(Debug, Deserialize_repr, Clone, Copy)]
 #[repr(u32)]
@@ -1264,6 +1286,16 @@ impl Default for SamplerWrap {
     /// The default wrapping mode is repeat
     fn default() -> Self {
         SamplerWrap::Repeat
+    }
+}
+
+impl From<SamplerWrap> for crate::texture::WrappingMode {
+    fn from(wrap: SamplerWrap) -> Self {
+        match wrap {
+            SamplerWrap::ClampToEdge => Self::ClampToEdge,
+            SamplerWrap::MirroredRepeat => Self::MirroredRepeat,
+            SamplerWrap::Repeat => Self::Repeat,
+        }
     }
 }
 
