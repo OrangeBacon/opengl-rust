@@ -7,7 +7,7 @@ use super::{
     event::{Event, MouseButton, MouseButtonState},
     input::InputState,
     scancode::Scancode,
-    window::{Clipboard, SystemCursors, Window, WindowConfig},
+    window::{Clipboard, MouseGrabMode, SystemCursors, Window, WindowConfig},
 };
 
 /// Error type used during initialisation of SDL2 - the default bindings only
@@ -54,6 +54,12 @@ pub struct SdlWindow {
 
     /// The currently loaded cursor, needed so it isn't dropped
     _cursor: sdl2::mouse::Cursor,
+
+    /// Is the mouse captured by the window
+    mouse_capture: bool,
+
+    /// Does the mouse use relative motion
+    mouse_relative: bool,
 }
 
 impl Window for SdlWindow {
@@ -76,7 +82,7 @@ impl Window for SdlWindow {
         // Configure and create a new window
         let mut window = video.window(config.title, config.width, config.height);
 
-        window.opengl();
+        window.opengl().allow_highdpi();
         if config.resizable {
             window.resizable();
         }
@@ -98,6 +104,8 @@ impl Window for SdlWindow {
             window,
             event_pump,
             _cursor: cursor,
+            mouse_capture: false,
+            mouse_relative: false,
             gl_contexts: Vec::with_capacity(1),
         })
     }
@@ -121,15 +129,28 @@ impl Window for SdlWindow {
         self.video.gl_get_proc_address(name) as _
     }
 
-    fn set_mouse_capture(&mut self, state: bool) {
+    fn set_mouse_mode(&mut self, state: MouseGrabMode) {
         let mouse = self.sdl.mouse();
+
+        let (capture, relative) = match state {
+            MouseGrabMode::Standard => (false, false),
+            MouseGrabMode::Constrained => (true, false),
+            MouseGrabMode::Relative => (false, true),
+            MouseGrabMode::RelativeConstrained => (true, true),
+        };
 
         // sets mouse capture mode, if not enabled sdl seems to act wierdly
         // when in relative mouse mode
-        mouse.capture(state);
+        if self.mouse_capture != capture {
+            mouse.capture(capture);
+            self.mouse_capture = capture;
+        }
 
         // keeps the mouse in the middle of the window and hides it
-        mouse.set_relative_mouse_mode(state);
+        if self.mouse_relative != relative {
+            mouse.set_relative_mouse_mode(relative);
+            self.mouse_relative = relative;
+        }
     }
 
     fn event(&mut self) -> Option<Event> {
@@ -226,6 +247,19 @@ impl Window for SdlWindow {
         let gl = gl::Gl::load_with(|s| self.video.gl_get_proc_address(s) as _);
 
         Ok(Box::new(GlRenderer::new(gl)))
+    }
+
+    fn set_mouse_position(&mut self, x: u32, y: u32) {
+        self.sdl
+            .mouse()
+            .warp_mouse_in_window(&self.window, x as _, y as _);
+    }
+
+    fn scale(&self) -> (f32, f32) {
+        let (x, y) = self.window.drawable_size();
+        let (win_x, win_y) = self.window.size();
+
+        (x as f32 / win_x as f32, y as f32 / win_y as f32)
     }
 }
 

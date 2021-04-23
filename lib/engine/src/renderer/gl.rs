@@ -609,7 +609,6 @@ impl<'a> Drop for BoundGlTexture<'a> {
 }
 
 /// attach console print debugging to the provided OpenGL Context
-#[cfg(debug_assertions)]
 fn enable_gl_debugging(gl: &gl::Gl) {
     let mut flags = 0;
     unsafe {
@@ -646,7 +645,6 @@ fn enable_gl_debugging(gl: &gl::Gl) {
 }
 
 /// Debugging callback
-#[cfg(debug_assertions)]
 extern "system" fn gl_debug_log(
     source: gl::types::GLenum,
     gltype: gl::types::GLenum,

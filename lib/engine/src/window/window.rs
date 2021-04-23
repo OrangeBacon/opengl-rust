@@ -50,18 +50,25 @@ pub trait Window {
     fn event(&mut self) -> Option<Event>;
 
     /// Allow the window to capture the mouse, e.g. for first person camera support
-    fn set_mouse_capture(&mut self, state: bool);
+    fn set_mouse_mode(&mut self, mode: MouseGrabMode);
 
     /// Take the last frames mouse state and update it with the current frames
     /// mouse state
     fn update_mouse(&mut self, state: &mut InputState);
 
+    /// Sets the current position of the mouse.  May not change the mouse
+    /// position in other events read this frame.
+    fn set_mouse_position(&mut self, x: u32, y: u32);
+
     /// Run the required functions at the end of a frame, for example swapping
     /// double buffers
     fn swap_window(&mut self);
 
-    /// Get the current size of the window being displayed
+    /// Get the current size (x, y) of the window being displayed
     fn size(&self) -> (u32, u32);
+
+    /// Get the scale factor (x, y) to apply to the game, used for hdpi support
+    fn scale(&self) -> (f32, f32);
 
     /// Get a setter and getter for the clipboard
     fn clipboard(&self) -> Box<dyn Clipboard>;
@@ -95,4 +102,21 @@ pub enum SystemCursors {
     Hand,
     NotAllowed,
     NoCursor,
+}
+
+/// How the window controls the mouse position
+pub enum MouseGrabMode {
+    /// It doesn't, the default mode for the operating system
+    Standard,
+
+    /// The mouse is constrained to within the window
+    Constrained,
+
+    /// The mouse is hidden, mouse motion per frame is used, not mouse position
+    Relative,
+
+    /// The mouse is hidden, mouse motion per frame is used, not mouse position.
+    /// Also, the hidden mouse is constrained to the current window, prevents
+    /// it seeming like hovering over other windows while moving the mouse
+    RelativeConstrained,
 }
