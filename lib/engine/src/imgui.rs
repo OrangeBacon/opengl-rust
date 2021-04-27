@@ -29,6 +29,9 @@ impl<T: Layer + 'static> Layer for ImguiLayer<T> {
         context.set_clipboard_backend(Box::new(ImguiClipboard(state.window.clipboard())));
 
         let io = context.io_mut();
+        io.backend_flags |= imgui::BackendFlags::HAS_MOUSE_CURSORS;
+        io.backend_flags |= imgui::BackendFlags::HAS_SET_MOUSE_POS;
+
         io.key_map[imgui::Key::Tab as usize] = Scancode::Tab as u32;
         io.key_map[imgui::Key::LeftArrow as usize] = Scancode::Left as u32;
         io.key_map[imgui::Key::RightArrow as usize] = Scancode::Right as u32;
@@ -82,27 +85,44 @@ impl<T: Layer + 'static> Layer for ImguiLayer<T> {
         let handled = match event {
             Event::Scroll { y, x, .. } => {
                 let io = self.context.io_mut();
-                io.mouse_wheel = *y as f32;
-                io.mouse_wheel_h = *x as f32;
+
+                if *x > 0 {
+                    io.mouse_wheel_h += 1.0;
+                } else if *x < 0 {
+                    io.mouse_wheel_h -= 1.0;
+                }
+
+                if *y > 0 {
+                    io.mouse_wheel += 1.0;
+                } else if *y < 0 {
+                    io.mouse_wheel -= 1.0;
+                }
+
                 io.want_capture_mouse
             }
             Event::KeyDown { key } => {
                 let io = self.context.io_mut();
+
                 set_modifiers(io);
                 io.keys_down[*key as usize] = true;
+
                 io.want_capture_keyboard
             }
             Event::KeyUp { key } => {
                 let io = self.context.io_mut();
+
                 set_modifiers(io);
                 io.keys_down[*key as usize] = false;
+
                 io.want_capture_keyboard
             }
             Event::TextInput { ref text } => {
                 let io = self.context.io_mut();
+
                 for c in text.chars() {
                     io.add_input_character(c);
                 }
+
                 io.want_capture_keyboard
             }
             Event::MouseButton { .. } => {
@@ -127,11 +147,31 @@ impl<T: Layer + 'static> Layer for ImguiLayer<T> {
     fn render(&mut self, state: &mut EngineStateRef) -> Result<()> {
         let io = self.context.io_mut();
 
+        // size of window to render to
         let (w, h) = state.window.size();
         io.display_size = [w as f32, h as f32];
-        // Todo: this makes imgui not dpi aware, fix this
-        io.display_framebuffer_scale = [1.0, 1.0];
 
+        let (sx, sy) = state.window.scale();
+        io.display_framebuffer_scale = [sx, sy];
+
+        // frame timing data for imgui, todo: move to one location accessable
+        // by all layers
+        let now = Instant::now();
+        let delta = now - self.frame_time;
+        let delta = delta.as_secs() as f32 + delta.subsec_nanos() as f32 / 1_000_000_000.0;
+        self.frame_time = now;
+        io.delta_time = delta;
+
+        // sometime imgui might want to set the mouse position
+        if io.want_set_mouse_pos {
+            state
+                .window
+                .set_mouse_position(io.mouse_pos[0] as _, io.mouse_pos[1] as _);
+        } else {
+            io.mouse_pos = [-f32::MAX, -f32::MAX];
+        }
+
+        // which mouse buttons are pressed
         io.mouse_down = [
             state.inputs.mouse_left(),
             state.inputs.mouse_right(),
@@ -140,15 +180,16 @@ impl<T: Layer + 'static> Layer for ImguiLayer<T> {
             state.inputs.mouse_five(),
         ];
 
-        let (x, y) = state.inputs.mouse_position();
-        io.mouse_pos = [x as f32, y as f32];
-
-        let now = Instant::now();
-        let delta = now - self.frame_time;
-        let delta = delta.as_secs() as f32 + delta.subsec_nanos() as f32 / 1_000_000_000.0;
-        self.frame_time = now;
-
-        self.context.io_mut().delta_time = delta;
+        // only update mouse position if the window has focus
+        if state.window.is_focused() {
+            // only update mouse position if it wasn't set in the current frame
+            // as setting the mouse position probably won't have been reflected
+            // in [`state.inputs.mouse_position()`] yet
+            if !io.want_set_mouse_pos {
+                let (x, y) = state.inputs.mouse_position();
+                io.mouse_pos = [x as f32, y as f32];
+            }
+        }
 
         let ui = self.context.frame();
 

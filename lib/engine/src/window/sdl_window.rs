@@ -261,6 +261,11 @@ impl Window for SdlWindow {
 
         (x as f32 / win_x as f32, y as f32 / win_y as f32)
     }
+
+    fn is_focused(&self) -> bool {
+        (self.window.window_flags() & sdl2::sys::SDL_WindowFlags::SDL_WINDOW_INPUT_FOCUS as u32)
+            != 0
+    }
 }
 
 struct SdlClipboard(sdl2::clipboard::ClipboardUtil);

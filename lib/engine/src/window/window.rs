@@ -78,6 +78,9 @@ pub trait Window {
 
     /// Get a rendering context
     fn renderer(&mut self) -> Result<Box<dyn RendererBackend>>;
+
+    /// Does the current window have focus?
+    fn is_focused(&self) -> bool;
 }
 
 /// Wrapper around the system clipboard

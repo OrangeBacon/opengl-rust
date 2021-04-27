@@ -3,15 +3,13 @@ use gl::types::*;
 use std::{
     collections::HashMap,
     ffi::{CStr, CString, NulError},
+    mem::size_of,
 };
 use thiserror::Error;
 
-use crate::{
-    buffer::Buffer,
-    texture::{
-        MagFilter, MinFilter, Texture, TextureSourceFormat, TextureSourceType, TextureStorageType,
-        WrappingMode,
-    },
+use crate::texture::{
+    MagFilter, MinFilter, Texture, TextureSourceFormat, TextureSourceType, TextureStorageType,
+    WrappingMode,
 };
 
 use super::{
@@ -604,6 +602,63 @@ impl<'a> Drop for BoundGlTexture<'a> {
         unsafe {
             self.tex.gl.ActiveTexture(gl::TEXTURE0 + self.index);
             self.tex.gl.BindTexture(gl::TEXTURE_2D, 0);
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Buffer {
+    gl: gl::Gl,
+    vbo: GLuint,
+    pub buffer_type: GLenum,
+}
+
+impl Buffer {
+    fn new(gl: &gl::Gl, buffer_type: GLenum) -> Buffer {
+        let mut vbo = 0;
+        unsafe {
+            gl.GenBuffers(1, &mut vbo);
+        }
+
+        Buffer {
+            gl: gl.clone(),
+            vbo,
+            buffer_type,
+        }
+    }
+
+    fn bind(&self) {
+        unsafe {
+            self.gl.BindBuffer(self.buffer_type, self.vbo);
+        }
+    }
+
+    fn unbind(&self) {
+        unsafe {
+            self.gl.BindBuffer(self.buffer_type, 0);
+        }
+    }
+
+    fn static_draw_data<T>(&self, data: &[T]) {
+        unsafe {
+            self.gl.BufferData(
+                self.buffer_type,
+                (data.len() * size_of::<T>()) as GLsizeiptr,
+                data.as_ptr() as *const GLvoid,
+                gl::STATIC_DRAW,
+            );
+        }
+    }
+
+    fn id(&self) -> GLuint {
+        self.vbo
+    }
+}
+
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        unsafe {
+            self.gl.DeleteBuffers(1, &self.vbo);
         }
     }
 }
