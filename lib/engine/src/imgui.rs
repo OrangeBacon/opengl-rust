@@ -1,6 +1,11 @@
 use std::{marker::PhantomData, time::Instant};
 
 use crate::{
+    renderer::{
+        shader::{BuiltinVariable, Expression, Program, Type},
+        PipelineId, TextureId,
+    },
+    texture::{Texture, TextureOptions},
     window::{
         event::Event,
         scancode::Scancode,
@@ -15,6 +20,8 @@ pub struct ImguiLayer<T: Layer> {
     frame_time: Instant,
     renderer: imgui_opengl_renderer::Renderer,
     current_cursor: SystemCursors,
+
+    _new_renderer: ImguiRenderer,
 
     _child: PhantomData<T>,
 }
@@ -54,6 +61,8 @@ impl<T: Layer + 'static> Layer for ImguiLayer<T> {
         io.key_map[imgui::Key::Insert as usize] = Scancode::Insert as u32;
         io.key_map[imgui::Key::KeyPadEnter as usize] = Scancode::KpEnter as u32;
 
+        let new_renderer = ImguiRenderer::new(state, &mut context)?;
+
         let renderer =
             imgui_opengl_renderer::Renderer::new(&mut context, |s| state.window.gl_loader(s));
         let frame_time = Instant::now();
@@ -63,6 +72,7 @@ impl<T: Layer + 'static> Layer for ImguiLayer<T> {
             frame_time,
             renderer,
             current_cursor: SystemCursors::Arrow,
+            _new_renderer: new_renderer,
             _child: PhantomData::default(),
         })
     }
@@ -246,5 +256,80 @@ impl imgui::ClipboardBackend for ImguiClipboard {
 
     fn set(&mut self, value: &imgui::ImStr) {
         self.0.set(value.to_str());
+    }
+}
+
+struct ImguiRenderer {
+    /// The imgui rendering pipeline, is always the same shader
+    _program: PipelineId,
+
+    /// The currently avaliable textures for imgui, if imgui needs a texture,
+    /// then it needs to be in this vec.  Item 0 is the font atlas
+    _textures: Vec<TextureId>,
+}
+
+impl ImguiRenderer {
+    fn new(state: &mut EngineStateRef, context: &mut imgui::Context) -> Result<Self> {
+        // the default shader, translated from imgui's source
+        let mut program = Program::new(|ctx| {
+            ctx.vertex(|ctx| {
+                let projection = ctx.uniform("projection", Type::Mat4);
+                let position = ctx.input("position", Type::Vec2);
+                let uv_in = ctx.input("uv_in", Type::Vec2);
+                let uv_out = ctx.output("uv", Type::Vec2);
+                let color_in = ctx.input("color_in", Type::Vec4);
+                let color_out = ctx.output("color", Type::Vec4);
+
+                ctx.set_output(uv_out, uv_in);
+                ctx.set_output(color_out, color_in);
+                ctx.set_builtin(
+                    BuiltinVariable::VertexPosition,
+                    projection * Expression::vec(&[position, 0.0.into(), 1.0.into()]),
+                );
+            });
+            ctx.frag(|ctx| {
+                let tex = ctx.uniform("tex", Type::Sampler2D);
+                let uv = ctx.input("uv", Type::Vec2);
+                let color = ctx.input("color", Type::Vec4);
+                let output = ctx.output("frag_color", Type::Vec4);
+
+                ctx.set_output(output, color * Expression::texture(tex, uv));
+            });
+        });
+        program.ok()?;
+
+        let program = state.load_pipeline(program)?;
+
+        let textures = {
+            // load the font atlas, could use an alpha8 texture, to be more
+            // vram efficient, but this is easier and it isn't really a big
+            // texture anyway
+            let mut atlas = context.fonts();
+            let tex = atlas.build_rgba32_texture();
+
+            let config = TextureOptions {
+                min_filter: crate::texture::MinFilter::Linear,
+                mag_filter: crate::texture::MagFilter::Linear,
+                source_format: crate::texture::TextureSourceFormat::RGBA,
+                source_type: crate::texture::TextureSourceType::U8,
+                width: tex.width,
+                height: tex.height,
+                storage: crate::texture::TextureStorageType::RGBA,
+                ..Default::default()
+            };
+
+            let tex = state
+                .renderer
+                .load_texture(Texture::from_raw_config(tex.data, config)?);
+
+            atlas.tex_id = 0.into();
+
+            vec![tex]
+        };
+
+        Ok(Self {
+            _program: program,
+            _textures: textures,
+        })
     }
 }

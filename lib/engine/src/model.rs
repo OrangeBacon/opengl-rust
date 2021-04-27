@@ -1235,9 +1235,9 @@ impl GPUPrimitive {
                 let output_global = ctx.output("frag_color", Type::Vec4);
 
                 if let Some(output) = output {
-                    ctx.set_global(output_global, output);
+                    ctx.set_output(output_global, output);
                 } else {
-                    ctx.set_global(
+                    ctx.set_output(
                         output_global,
                         Expression::vec(&[0.5.into(), 0.5.into(), 0.5.into(), 1.0.into()]),
                     )

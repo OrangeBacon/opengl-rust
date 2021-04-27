@@ -503,24 +503,6 @@ impl Function {
 }
 
 impl<'a, 'b> FunctionContext<'a, 'b> {
-    pub fn set_global(&mut self, global: Expression, value: Expression) {
-        let global = self
-            .function
-            .expr_to_variable(&mut self.program.program, &global);
-
-        let value = self
-            .function
-            .expr_to_variable(&mut self.program.program, &value);
-
-        self.function.blocks[0]
-            .statements
-            .push(Statement::CallBuiltin {
-                function: BuiltinFunction::SetGlobal,
-                arguments: vec![global, value],
-                result: None,
-            });
-    }
-
     pub fn set_builtin(&mut self, builtin: BuiltinVariable, value: Expression) {
         let value = self
             .function
