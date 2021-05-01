@@ -17,6 +17,7 @@ use crate::{
 };
 use anyhow::Result;
 use nalgebra_glm as glm;
+use renderer::CullingMode;
 use slotmap::{DefaultKey, SlotMap};
 use thiserror::Error;
 
@@ -1171,12 +1172,16 @@ impl GPUPrimitive {
         proj: &glm::Mat4,
         model: &glm::Mat4,
     ) -> Result<()> {
-        renderer.backface_culling(self.culling);
+        if self.culling {
+            renderer.backface_culling(CullingMode::Back);
+        } else {
+            renderer.backface_culling(CullingMode::None)
+        }
 
         let mut pipeline = renderer.bind_pipeline(self.pipeline);
-        pipeline.bind_matrix("view", *view);
-        pipeline.bind_matrix("projection", *proj);
-        pipeline.bind_matrix("model", *model);
+        pipeline.bind_matrix("view", *view)?;
+        pipeline.bind_matrix("projection", *proj)?;
+        pipeline.bind_matrix("model", *model)?;
 
         if let Some(tex) = self.base_color_texidx {
             pipeline.bind_texture("base_color", tex)?;

@@ -42,7 +42,7 @@ impl Renderer {
 
     /// Enable or disable backface culling
     #[inline(always)]
-    pub fn backface_culling(&mut self, enable: bool) {
+    pub fn backface_culling(&mut self, enable: CullingMode) {
         self.backend.backface_culling(enable)
     }
 
@@ -112,10 +112,10 @@ impl<'a> BoundPipeline<'a> {
         Self { renderer, pipeline }
     }
 
-    pub fn bind_matrix(&mut self, name: &str, matrix: glm::Mat4) {
+    pub fn bind_matrix(&mut self, name: &str, matrix: glm::Mat4) -> Result<()> {
         self.renderer
             .backend
-            .pipeline_bind_matrix(self.pipeline, name, matrix);
+            .pipeline_bind_matrix(self.pipeline, name, matrix)
     }
 
     pub fn bind_texture(&mut self, name: &str, texture: TextureId) -> Result<()> {
@@ -184,4 +184,12 @@ pub enum IndexType {
     U8,
     U16,
     U32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CullingMode {
+    None,
+    Front,
+    Back,
+    FrontBack,
 }

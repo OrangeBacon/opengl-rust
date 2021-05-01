@@ -2,7 +2,8 @@ use anyhow::Result;
 use nalgebra_glm as glm;
 
 use super::{
-    shader::Program, DrawingMode, IndexBufferId, IndexType, PipelineId, TextureId, VertexBufferId,
+    shader::Program, CullingMode, DrawingMode, IndexBufferId, IndexType, PipelineId, TextureId,
+    VertexBufferId,
 };
 use crate::texture::Texture;
 
@@ -15,7 +16,7 @@ pub trait RendererBackend {
     fn viewport(&mut self, width: u32, height: u32);
 
     /// Enable or disable backface culling
-    fn backface_culling(&mut self, enable: bool);
+    fn backface_culling(&mut self, enable: CullingMode);
 
     /// Load a new texture
     fn load_texture(&mut self, texture: Texture) -> TextureId;
@@ -48,7 +49,12 @@ pub trait RendererBackend {
     fn unbind_pipeline(&mut self, pipeline: PipelineId);
 
     /// Bind a 4x4 matrix to a pipeline
-    fn pipeline_bind_matrix(&mut self, pipeline: PipelineId, name: &str, matrix: glm::Mat4);
+    fn pipeline_bind_matrix(
+        &mut self,
+        pipeline: PipelineId,
+        name: &str,
+        matrix: glm::Mat4,
+    ) -> Result<()>;
 
     /// Bind a texture to a pipeline
     fn pipeline_bind_texture(

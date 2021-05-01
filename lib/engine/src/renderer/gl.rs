@@ -15,9 +15,11 @@ use crate::texture::{
 use super::{
     backend::RendererBackend,
     shader::{Program, Type},
-    DrawingMode, IdType, IndexBufferId, IndexType, PipelineId, TextureId, VertexBufferId,
+    CullingMode, DrawingMode, IdType, IndexBufferId, IndexType, PipelineId, TextureId,
+    VertexBufferId,
 };
 
+/// Possible errors encounted in OpenGl
 #[derive(Debug, Error)]
 enum GlError {
     #[error("Error compiling shader:\n{message}")]
@@ -45,28 +47,53 @@ enum GlError {
     OpaqueVerticies,
 }
 
+/// OpenGl renderer implementation
 pub struct GlRenderer {
+    /// The current opengl context used for all rendering operations
     gl: gl::Gl,
 
+    /// The current id counter, constantly increasing counter, allocating any
+    /// resource adds one to this counter
     id: IdType,
 
+    /// All the currently loaded textures
     textures: HashMap<IdType, GlTexture>,
+
+    /// All the currently loaded buffers stored on the gpu
     buffers: HashMap<IdType, Buffer>,
+
+    /// All the shader pipelines currently avaliable
     pipelines: HashMap<IdType, GlPipeline>,
 
+    /// A vector of all the texture units, if true then in use, if false then
+    /// not in use.  Unit 0 is always set as in use as it is used as the binding
+    /// location while loading new textures
     texture_units: Vec<bool>,
+
+    /// A map connecting the active pipeliness and the indicies into the texture_units
+    /// vec that the pipeline is currently using
     active_textures: HashMap<PipelineId, Vec<usize>>,
 
+    /// Whether backface culling is enabled for all future draw calls
     backface_culling_enabled: bool,
+
+    backface_culling_mode: GLuint,
 }
 
 impl GlRenderer {
+    /// Create a new OpenGl rendering backend
     pub fn new(gl: gl::Gl) -> Self {
+        // only enable gl debug logging in debug mode, todo: propper logging that
+        // isn't just to the terminal
         if cfg!(debug_assertions) {
             enable_gl_debugging(&gl);
         }
 
+        // depth desting is enabled to begin with
         unsafe { gl.Enable(gl::DEPTH_TEST) }
+
+        // initial culling mode is back faces culled
+        unsafe { gl.CullFace(gl::BACK) }
 
         // get maximum number of active texture units
         let mut texture_units = 0;
@@ -84,6 +111,7 @@ impl GlRenderer {
             gl,
             id: 0,
             backface_culling_enabled: false,
+            backface_culling_mode: gl::BACK,
             textures: HashMap::new(),
             buffers: HashMap::new(),
             pipelines: HashMap::new(),
@@ -95,6 +123,8 @@ impl GlRenderer {
 
 impl RendererBackend for GlRenderer {
     fn clear(&mut self, r: f32, g: f32, b: f32) {
+        // assumes that the framebuffer has no alpha and that depth should
+        // also be cleared
         unsafe {
             self.gl.ClearColor(r, g, b, 1.0);
             self.gl.Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
@@ -102,22 +132,38 @@ impl RendererBackend for GlRenderer {
     }
 
     fn viewport(&mut self, width: u32, height: u32) {
+        // top left (0, 0) view port always
         unsafe {
             self.gl.Viewport(0, 0, width as _, height as _);
         }
     }
 
-    fn backface_culling(&mut self, enable: bool) {
+    fn backface_culling(&mut self, enable: CullingMode) {
         // cache whether culling is enabled or not to reduce draw calls
-        if enable && !self.backface_culling_enabled {
-            unsafe {
-                self.gl.Enable(gl::CULL_FACE);
-                self.gl.CullFace(gl::BACK);
-            }
+
+        if enable != CullingMode::None && !self.backface_culling_enabled {
+            unsafe { self.gl.Enable(gl::CULL_FACE) }
             self.backface_culling_enabled = true;
-        } else if self.backface_culling_enabled {
-            unsafe { self.gl.Disable(gl::CULL_FACE) }
-            self.backface_culling_enabled = false;
+        }
+
+        match enable {
+            CullingMode::None if self.backface_culling_enabled => {
+                unsafe { self.gl.Disable(gl::CULL_FACE) }
+                self.backface_culling_enabled = false;
+            }
+            CullingMode::Front if self.backface_culling_mode != gl::FRONT => {
+                unsafe { self.gl.CullFace(gl::FRONT) }
+                self.backface_culling_mode = gl::FRONT;
+            }
+            CullingMode::Back if self.backface_culling_mode != gl::BACK => {
+                unsafe { self.gl.CullFace(gl::BACK) }
+                self.backface_culling_mode = gl::BACK;
+            }
+            CullingMode::FrontBack if self.backface_culling_mode != gl::FRONT_AND_BACK => {
+                unsafe { self.gl.CullFace(gl::FRONT_AND_BACK) }
+                self.backface_culling_mode = gl::FRONT_AND_BACK;
+            }
+            _ => (),
         }
     }
 
@@ -132,7 +178,10 @@ impl RendererBackend for GlRenderer {
     }
 
     fn unload_texture(&mut self, texture: TextureId) {
-        self.textures.remove(&texture.0);
+        let removed = self.textures.remove(&texture.0);
+
+        // if unloading a texture, it must have existed already
+        debug_assert!(!removed.is_none());
     }
 
     fn load_vertex_buffer(&mut self, data: &[u8]) -> VertexBufferId {
@@ -150,7 +199,10 @@ impl RendererBackend for GlRenderer {
     }
 
     fn unload_vertex_buffer(&mut self, buffer: VertexBufferId) {
-        self.buffers.remove(&buffer.0);
+        let removed = self.buffers.remove(&buffer.0);
+
+        // if removing a vertex buffer it must have already existed
+        debug_assert!(!removed.is_none());
     }
 
     fn load_index_buffer(&mut self, data: &[u8]) -> IndexBufferId {
@@ -168,7 +220,10 @@ impl RendererBackend for GlRenderer {
     }
 
     fn unload_index_buffer(&mut self, buffer: IndexBufferId) {
-        self.buffers.remove(&buffer.0);
+        let removed = self.buffers.remove(&buffer.0);
+
+        // if removing an index buffer it must have already existed
+        debug_assert!(!removed.is_none());
     }
 
     fn load_pipeline(&mut self, pipeline: Program) -> Result<PipelineId> {
@@ -182,12 +237,22 @@ impl RendererBackend for GlRenderer {
     }
 
     fn unload_pipeline(&mut self, pipeline: PipelineId) {
-        self.pipelines.remove(&pipeline.0);
+        let removed = self.pipelines.remove(&pipeline.0);
+
+        // if removing a pipeline buffer it must have already existed
+        debug_assert!(!removed.is_none());
     }
 
     fn bind_pipeline(&mut self, pipeline: PipelineId) {
         self.active_textures.insert(pipeline, vec![]);
-        self.pipelines[&pipeline.0].bind(&self.gl);
+
+        if let Some(pipeline) = self.pipelines.get_mut(&pipeline.0) {
+            debug_assert!(!pipeline.is_bound);
+
+            pipeline.bind(&self.gl);
+        } else {
+            debug_assert!(false, "Cannot bind non-existant pipeline");
+        }
     }
 
     fn unbind_pipeline(&mut self, pipeline: PipelineId) {
@@ -195,7 +260,16 @@ impl RendererBackend for GlRenderer {
             self.texture_units[texture_unit] = false;
         }
 
+        // doesn't matter if this succeeds, failure just means no textures were used
         self.active_textures.remove(&pipeline);
+
+        if let Some(pipeline) = self.pipelines.get_mut(&pipeline.0) {
+            debug_assert!(pipeline.is_bound);
+
+            pipeline.unbind();
+        } else {
+            debug_assert!(false, "Cannot unbind non-existant pipeline");
+        }
     }
 
     fn pipeline_bind_matrix(
@@ -203,15 +277,25 @@ impl RendererBackend for GlRenderer {
         pipeline: PipelineId,
         name: &str,
         matrix: nalgebra_glm::Mat4,
-    ) {
-        if let Ok(name) = CString::new(name) {
-            let pipeline = self.pipelines[&pipeline.0].program_id;
+    ) -> Result<()> {
+        let name = CString::new(name)?;
+
+        if let Some(pipeline) = self.pipelines.get(&pipeline.0) {
+            debug_assert!(pipeline.is_bound);
+
+            // todo: cache get uniform location?
             unsafe {
-                let loc = self.gl.GetUniformLocation(pipeline, name.as_ptr());
+                let loc = self
+                    .gl
+                    .GetUniformLocation(pipeline.program_id, name.as_ptr());
                 self.gl
                     .UniformMatrix4fv(loc, 1, gl::FALSE, matrix.as_slice().as_ptr());
             }
+        } else {
+            debug_assert!(false, "Cannot bind matrix to non-existant pipeline");
         }
+
+        Ok(())
     }
 
     fn pipeline_bind_texture(
@@ -245,10 +329,17 @@ impl RendererBackend for GlRenderer {
             .set_bound(texture_unit as _);
 
         // tell the shader about the texture unit
-        let pipeline = self.pipelines[&pipeline.0].program_id;
-        unsafe {
-            let loc = self.gl.GetUniformLocation(pipeline, name.as_ptr());
-            self.gl.Uniform1i(loc, texture_unit as _);
+        if let Some(pipeline) = self.pipelines.get(&pipeline.0) {
+            debug_assert!(pipeline.is_bound);
+
+            unsafe {
+                let loc = self
+                    .gl
+                    .GetUniformLocation(pipeline.program_id, name.as_ptr());
+                self.gl.Uniform1i(loc, texture_unit as _);
+            }
+        } else {
+            debug_assert!(false, "Cannot bind texture to pipeline that dosen't exist");
         }
 
         Ok(())
@@ -267,12 +358,23 @@ impl RendererBackend for GlRenderer {
             .collect();
 
         let pipeline = &self.pipelines[&pipeline.0];
+        debug_assert!(pipeline.is_bound);
 
         if let Some(vert) = pipeline.pipeline.vertex_main() {
-            if vert.inputs().len() != buffers.len() {
-                println!("Error: Trying to setup incorrect vertex buffers");
-            }
+            debug_assert!(
+                vert.inputs().len() == buffers.len(),
+                "Trying to setup incorrect numbers vertex buffers"
+            );
+        } else {
+            debug_assert!(
+                false,
+                "Trying to apply vertex buffers to pipeline without vertex shader"
+            );
         }
+
+        // all slices must be the same length
+        debug_assert!(buffers.len() == offsets.len());
+        debug_assert!(buffers.len() == strides.len());
 
         unsafe {
             self.gl.VertexArrayVertexBuffers(
@@ -286,7 +388,13 @@ impl RendererBackend for GlRenderer {
         }
     }
 
-    fn draw(&mut self, _pipeline: PipelineId, mode: DrawingMode, start: u64, count: u64) {
+    fn draw(&mut self, pipeline: PipelineId, mode: DrawingMode, start: u64, count: u64) {
+        if let Some(pipeline) = self.pipelines.get(&pipeline.0) {
+            debug_assert!(pipeline.is_bound);
+        } else {
+            debug_assert!(false, "Cannot draw using pipeline that does not exist");
+        }
+
         let mode = match mode {
             DrawingMode::Points => gl::POINTS,
             DrawingMode::Lines => gl::LINES,
@@ -304,13 +412,19 @@ impl RendererBackend for GlRenderer {
 
     fn draw_indicies(
         &mut self,
-        _pipeline: PipelineId,
+        pipeline: PipelineId,
         mode: DrawingMode,
         indices: IndexBufferId,
         index_type: IndexType,
         index_offset: usize,
         count: usize,
     ) {
+        if let Some(pipeline) = self.pipelines.get(&pipeline.0) {
+            debug_assert!(pipeline.is_bound);
+        } else {
+            debug_assert!(false, "Cannot draw using pipeline that does not exist");
+        }
+
         let mode = match mode {
             DrawingMode::Points => gl::POINTS,
             DrawingMode::Lines => gl::LINES,
@@ -341,6 +455,8 @@ struct GlPipeline {
     program_id: GLuint,
     vao: GLuint,
     pipeline: Program,
+
+    is_bound: bool,
 }
 
 impl GlPipeline {
@@ -414,14 +530,20 @@ impl GlPipeline {
             vao,
             gl,
             pipeline,
+            is_bound: false,
         })
     }
 
-    fn bind(&self, gl: &gl::Gl) {
+    fn bind(&mut self, gl: &gl::Gl) {
         unsafe {
             gl.UseProgram(self.program_id);
             gl.BindVertexArray(self.vao);
         }
+        self.is_bound = true;
+    }
+
+    fn unbind(&mut self) {
+        self.is_bound = false;
     }
 }
 
@@ -434,6 +556,7 @@ impl Drop for GlPipeline {
     }
 }
 
+#[derive(Debug)]
 pub struct GlTexture {
     gl: gl::Gl,
     id: GLuint,
