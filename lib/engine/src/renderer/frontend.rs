@@ -64,6 +64,12 @@ impl Renderer {
         self.backend.load_vertex_buffer(data)
     }
 
+    /// Load data as a vertex buffer for streaming upload
+    #[inline(always)]
+    pub fn load_vertex_buffer_stream(&mut self, data: &[u8]) -> VertexBufferId {
+        self.backend.load_vertex_buffer_stream(data)
+    }
+
     /// Unload a vertex buffer
     #[inline(always)]
     pub fn unload_vertex_buffer(&mut self, buffer: VertexBufferId) {
@@ -74,6 +80,12 @@ impl Renderer {
     #[inline(always)]
     pub fn load_index_buffer(&mut self, data: &[u8]) -> IndexBufferId {
         self.backend.load_index_buffer(data)
+    }
+
+    /// Load data as an index buffer for streaming upload
+    #[inline(always)]
+    pub fn load_index_buffer_stream(&mut self, data: &[u8]) -> IndexBufferId {
+        self.backend.load_index_buffer_stream(data)
     }
 
     /// Unload an index buffer

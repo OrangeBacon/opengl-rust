@@ -198,6 +198,20 @@ impl RendererBackend for GlRenderer {
         VertexBufferId(id)
     }
 
+    fn load_vertex_buffer_stream(&mut self, data: &[u8]) -> VertexBufferId {
+        let id = self.id;
+        self.id += 1;
+
+        let buf = Buffer::new(&self.gl, gl::ARRAY_BUFFER);
+        buf.bind();
+        buf.static_draw_data_stream(data);
+        buf.unbind();
+
+        self.buffers.insert(id, buf);
+
+        VertexBufferId(id)
+    }
+
     fn unload_vertex_buffer(&mut self, buffer: VertexBufferId) {
         let removed = self.buffers.remove(&buffer.0);
 
@@ -212,6 +226,20 @@ impl RendererBackend for GlRenderer {
         let buf = Buffer::new(&self.gl, gl::ELEMENT_ARRAY_BUFFER);
         buf.bind();
         buf.static_draw_data(data);
+        buf.unbind();
+
+        self.buffers.insert(id, buf);
+
+        IndexBufferId(id)
+    }
+
+    fn load_index_buffer_stream(&mut self, data: &[u8]) -> IndexBufferId {
+        let id = self.id;
+        self.id += 1;
+
+        let buf = Buffer::new(&self.gl, gl::ELEMENT_ARRAY_BUFFER);
+        buf.bind();
+        buf.static_draw_data_stream(data);
         buf.unbind();
 
         self.buffers.insert(id, buf);
@@ -769,6 +797,17 @@ impl Buffer {
                 (data.len() * size_of::<T>()) as GLsizeiptr,
                 data.as_ptr() as *const GLvoid,
                 gl::STATIC_DRAW,
+            );
+        }
+    }
+
+    fn static_draw_data_stream<T>(&self, data: &[T]) {
+        unsafe {
+            self.gl.BufferData(
+                self.buffer_type,
+                (data.len() * size_of::<T>()) as GLsizeiptr,
+                data.as_ptr() as *const GLvoid,
+                gl::STREAM_DRAW,
             );
         }
     }

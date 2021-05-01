@@ -27,11 +27,17 @@ pub trait RendererBackend {
     /// Load data as a vertex buffer
     fn load_vertex_buffer(&mut self, data: &[u8]) -> VertexBufferId;
 
+    /// Load data as a vertex buffer for streaming upload
+    fn load_vertex_buffer_stream(&mut self, data: &[u8]) -> VertexBufferId;
+
     /// Unload a vertex buffer
     fn unload_vertex_buffer(&mut self, buffer: VertexBufferId);
 
     /// Load data as an index buffer
     fn load_index_buffer(&mut self, data: &[u8]) -> IndexBufferId;
+
+    /// Load data as an index buffer for streaming upload
+    fn load_index_buffer_stream(&mut self, data: &[u8]) -> IndexBufferId;
 
     /// Unload an index buffer
     fn unload_index_buffer(&mut self, buffer: IndexBufferId);
