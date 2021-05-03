@@ -46,6 +46,11 @@ impl Renderer {
         self.backend.backface_culling(enable)
     }
 
+    #[inline(always)]
+    pub fn depth_testing(&mut self, mode: DepthTesting) {
+        self.backend.depth_testing(mode)
+    }
+
     /// Load a new texture
     #[inline(always)]
     pub fn load_texture(&mut self, texture: Texture) -> TextureId {
@@ -204,4 +209,33 @@ pub enum CullingMode {
     Front,
     Back,
     FrontBack,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DepthTesting {
+    None,
+    Enabled {
+        read_only: bool,
+        func: DepthTestingFunction,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DepthTestingFunction {
+    Always,
+    Never,
+    Less,
+    Equal,
+    LessEqual,
+    Greater,
+    NotEqual,
+    GreaterEqual,
+}
+
+impl DepthTesting {
+    #[allow(non_upper_case_globals)]
+    pub const Default: DepthTesting = DepthTesting::Enabled {
+        read_only: false,
+        func: DepthTestingFunction::Less,
+    };
 }

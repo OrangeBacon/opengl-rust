@@ -7,16 +7,19 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::texture::{
-    MagFilter, MinFilter, Texture, TextureSourceFormat, TextureSourceType, TextureStorageType,
-    WrappingMode,
+use crate::{
+    renderer::DepthTestingFunction,
+    texture::{
+        MagFilter, MinFilter, Texture, TextureSourceFormat, TextureSourceType, TextureStorageType,
+        WrappingMode,
+    },
 };
 
 use super::{
     backend::RendererBackend,
     shader::{Program, Type},
-    CullingMode, DrawingMode, IdType, IndexBufferId, IndexType, PipelineId, TextureId,
-    VertexBufferId,
+    CullingMode, DepthTesting, DrawingMode, IdType, IndexBufferId, IndexType, PipelineId,
+    TextureId, VertexBufferId,
 };
 
 /// Possible errors encounted in OpenGl
@@ -78,6 +81,10 @@ pub struct GlRenderer {
     backface_culling_enabled: bool,
 
     backface_culling_mode: GLuint,
+
+    depth_testing_enabled: bool,
+    depth_write_enabled: bool,
+    depth_function: GLuint,
 }
 
 impl GlRenderer {
@@ -117,6 +124,9 @@ impl GlRenderer {
             pipelines: HashMap::new(),
             active_textures: HashMap::new(),
             texture_units,
+            depth_function: gl::LESS,
+            depth_testing_enabled: true,
+            depth_write_enabled: true,
         }
     }
 }
@@ -164,6 +174,45 @@ impl RendererBackend for GlRenderer {
                 self.backface_culling_mode = gl::FRONT_AND_BACK;
             }
             _ => (),
+        }
+    }
+
+    fn depth_testing(&mut self, mode: DepthTesting) {
+        match mode {
+            DepthTesting::None => {
+                if self.depth_testing_enabled {
+                    unsafe { self.gl.Disable(gl::DEPTH_TEST) }
+                }
+            }
+            DepthTesting::Enabled { read_only, func } => {
+                if !self.depth_testing_enabled {
+                    self.depth_testing_enabled = true;
+                    unsafe { self.gl.Enable(gl::DEPTH_TEST) }
+                }
+
+                if read_only && self.depth_write_enabled {
+                    unsafe { self.gl.DepthMask(gl::FALSE) }
+                    self.depth_write_enabled = false;
+                } else if !read_only && !self.depth_write_enabled {
+                    unsafe { self.gl.DepthMask(gl::TRUE) }
+                    self.depth_write_enabled = false;
+                }
+
+                let func = match func {
+                    DepthTestingFunction::Always => gl::ALWAYS,
+                    DepthTestingFunction::Never => gl::NEVER,
+                    DepthTestingFunction::Less => gl::LESS,
+                    DepthTestingFunction::Equal => gl::EQUAL,
+                    DepthTestingFunction::LessEqual => gl::LEQUAL,
+                    DepthTestingFunction::Greater => gl::GREATER,
+                    DepthTestingFunction::NotEqual => gl::NOTEQUAL,
+                    DepthTestingFunction::GreaterEqual => gl::GEQUAL,
+                };
+
+                if self.depth_function != func {
+                    unsafe { self.gl.DepthFunc(func) }
+                }
+            }
         }
     }
 

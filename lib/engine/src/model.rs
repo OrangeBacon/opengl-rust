@@ -1177,6 +1177,7 @@ impl GPUPrimitive {
         } else {
             renderer.backface_culling(CullingMode::None)
         }
+        renderer.depth_testing(renderer::DepthTesting::Default);
 
         let mut pipeline = renderer.bind_pipeline(self.pipeline);
         pipeline.bind_matrix("view", *view)?;

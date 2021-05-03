@@ -2,8 +2,8 @@ use anyhow::Result;
 use nalgebra_glm as glm;
 
 use super::{
-    shader::Program, CullingMode, DrawingMode, IndexBufferId, IndexType, PipelineId, TextureId,
-    VertexBufferId,
+    shader::Program, CullingMode, DepthTesting, DrawingMode, IndexBufferId, IndexType, PipelineId,
+    TextureId, VertexBufferId,
 };
 use crate::texture::Texture;
 
@@ -17,6 +17,8 @@ pub trait RendererBackend {
 
     /// Enable or disable backface culling
     fn backface_culling(&mut self, enable: CullingMode);
+
+    fn depth_testing(&mut self, mode: DepthTesting);
 
     /// Load a new texture
     fn load_texture(&mut self, texture: Texture) -> TextureId;
